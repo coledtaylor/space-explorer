@@ -46,17 +46,6 @@ function drawStar(ctx, sx, sy, body, time) {
 }
 
 function drawPlanet(ctx, sx, sy, body, time) {
-  // Orbit ring (subtle)
-  if (body.orbitRadius) {
-    const centerSx = -camera_x_hack + ctx.canvas.width / 2;
-    const centerSy = -camera_y_hack + ctx.canvas.height / 2;
-    ctx.beginPath();
-    ctx.arc(centerSx, centerSy, body.orbitRadius, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(100, 150, 200, 0.08)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  }
-
   // Shadow
   ctx.beginPath();
   ctx.arc(sx + 2, sy + 2, body.radius, 0, Math.PI * 2);
@@ -110,6 +99,107 @@ let camera_x_hack = 0, camera_y_hack = 0;
 export function setCameraHack(cx, cy) {
   camera_x_hack = cx;
   camera_y_hack = cy;
+}
+
+// Draw the ship's predicted orbit path around soiBody
+export function drawOrbitPath(ctx, camera, orbitalElements, soiBody) {
+  if (!orbitalElements || !soiBody) return;
+
+  const { a, e, omega } = orbitalElements;
+  if (a === undefined || e === undefined || omega === undefined) return;
+
+  // Screen position of the SOI body (focus of the orbit)
+  const focusSx = soiBody.x - camera.x + ctx.canvas.width / 2;
+  const focusSy = soiBody.y - camera.y + ctx.canvas.height / 2;
+
+  const cosO = Math.cos(omega);
+  const sinO = Math.sin(omega);
+
+  if (e < 1) {
+    // Elliptical orbit
+    const b = a * Math.sqrt(1 - e * e);
+    const c = a * e; // focus offset from ellipse center
+
+    const points = [];
+    const steps = 100;
+    for (let i = 0; i <= steps; i++) {
+      const theta = (i / steps) * Math.PI * 2;
+      // Ellipse in perifocal frame (center at origin, focus at -c along x)
+      const xE = a * Math.cos(theta) - c;
+      const yE = b * Math.sin(theta);
+      // Rotate by omega into world frame, then to screen
+      const sx = focusSx + cosO * xE - sinO * yE;
+      const sy = focusSy + sinO * xE + cosO * yE;
+      points.push({ sx, sy });
+    }
+
+    ctx.beginPath();
+    ctx.setLineDash([8, 6]);
+    ctx.strokeStyle = 'rgba(79, 195, 247, 0.3)';
+    ctx.lineWidth = 1.5;
+    ctx.moveTo(points[0].sx, points[0].sy);
+    for (let i = 1; i < points.length; i++) {
+      ctx.lineTo(points[i].sx, points[i].sy);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Periapsis marker (at theta=0, xE = a - c = a*(1-e), yE = 0)
+    const pxE = a * (1 - e);
+    const periSx = focusSx + cosO * pxE;
+    const periSy = focusSy + sinO * pxE;
+    drawDiamond(ctx, periSx, periSy, 4, 'rgba(79, 195, 247, 0.6)');
+
+    // Apoapsis marker (at theta=PI, xE = -a - c = -a*(1+e), yE = 0)
+    const axE = -a * (1 + e);
+    const apoSx = focusSx + cosO * axE;
+    const apoSy = focusSy + sinO * axE;
+    drawDiamond(ctx, apoSx, apoSy, 4, 'rgba(79, 195, 247, 0.6)');
+  } else {
+    // Hyperbolic orbit
+    // For hyperbola: a is negative from computeOrbitalElements (epsilon > 0)
+    // p = a*(1-e^2), but since a<0 and e>1, 1-e^2 < 0, so p > 0
+    const p = a * (1 - e * e);
+    const maxNu = Math.acos(-1 / e) - 0.05;
+    const steps = 80;
+
+    const points = [];
+    for (let i = 0; i <= steps; i++) {
+      const nu = -maxNu + (i / steps) * 2 * maxNu;
+      const r = p / (1 + e * Math.cos(nu));
+      if (r < 0) continue;
+      const xP = r * Math.cos(nu);
+      const yP = r * Math.sin(nu);
+      // Rotate by omega
+      const sx = focusSx + cosO * xP - sinO * yP;
+      const sy = focusSy + sinO * xP + cosO * yP;
+      points.push({ sx, sy });
+    }
+
+    if (points.length < 2) return;
+
+    ctx.beginPath();
+    ctx.setLineDash([8, 6]);
+    ctx.strokeStyle = 'rgba(255, 150, 50, 0.3)';
+    ctx.lineWidth = 1.5;
+    ctx.moveTo(points[0].sx, points[0].sy);
+    for (let i = 1; i < points.length; i++) {
+      ctx.lineTo(points[i].sx, points[i].sy);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+function drawDiamond(ctx, sx, sy, size, color) {
+  ctx.beginPath();
+  ctx.moveTo(sx, sy - size);
+  ctx.lineTo(sx + size, sy);
+  ctx.lineTo(sx, sy + size);
+  ctx.lineTo(sx - size, sy);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
 }
 
 function lighten(color, amount) {

@@ -90,6 +90,7 @@ Set `#orbit-hud` to `display: none` initially (same pattern as `#hud` and `#mini
 ### Task 2: Add orbit path rendering and update renderer for new body format
 **Type:** auto
 **Sequence:** 1
+Completed: 2026-04-01
 
 <files>
 js/renderer.js
