@@ -1,8 +1,9 @@
 import { Ship } from './ship.js';
 import { Input } from './input.js';
 import { Starfield } from './starfield.js';
-import { generateSystem, updateOrbits } from './celestial.js';
+import { generateSystem, updateBodyPositions } from './celestial.js';
 import { drawBody, drawMinimap, setCameraHack } from './renderer.js';
+import { checkSOITransition, shipWorldPosition } from './physics.js';
 import { dist } from './utils.js';
 
 const canvas = document.getElementById('game-canvas');
@@ -36,7 +37,8 @@ const camera = { x: 0, y: 0 };
 
 // Generate a starting system
 let currentSystemSeed = 42;
-let bodies = generateSystem(currentSystemSeed);
+let system = generateSystem(currentSystemSeed);
+ship.currentSOIBody = system.star;
 
 function resize() {
   canvas.width = window.innerWidth;
@@ -77,43 +79,51 @@ function loop(timestamp) {
 }
 
 function update(dt) {
-  // Update aim
-  const shipScreenX = ship.x - camera.x + canvas.width / 2;
-  const shipScreenY = ship.y - camera.y + canvas.height / 2;
+  // Compute world position for camera aim update
+  const worldPos = shipWorldPosition(ship, system);
+
+  // Update aim using world-space ship position
+  const shipScreenX = worldPos.x - camera.x + canvas.width / 2;
+  const shipScreenY = worldPos.y - camera.y + canvas.height / 2;
   input.updateAim(shipScreenX, shipScreenY);
 
-  ship.update(dt, input);
-  updateOrbits(bodies, dt);
+  ship.update(dt, input, ship.currentSOIBody);
+  updateBodyPositions(system, dt);
 
-  // Camera follows ship smoothly
-  camera.x += (ship.x - camera.x) * 0.08;
-  camera.y += (ship.y - camera.y) * 0.08;
+  // SOI transition check — must happen after both ship and body positions are updated
+  checkSOITransition(ship, system);
+
+  // Recompute world position after possible transition
+  const wp = shipWorldPosition(ship, system);
+
+  // Camera follows ship world-space position smoothly
+  camera.x += (wp.x - camera.x) * 0.08;
+  camera.y += (wp.y - camera.y) * 0.08;
 
   // HUD
-  coordsDisplay.textContent = `x: ${Math.round(ship.x)}  y: ${Math.round(ship.y)}`;
+  coordsDisplay.textContent = `x: ${Math.round(wp.x)}  y: ${Math.round(wp.y)}`;
   fuelDisplay.textContent = `Fuel: ${Math.round(ship.fuel)}%`;
   speedDisplay.textContent = `Speed: ${Math.round(ship.getSpeed())}`;
 
-  // Find nearest body for location display
+  // SOI body name on location display
+  const soiName = ship.currentSOIBody ? ship.currentSOIBody.name : 'Unknown';
+  locationDisplay.textContent = `SOI: ${soiName}`;
+
+  // Find nearest body for scan interaction (use world-space distances)
   let nearest = null;
   let nearestDist = Infinity;
-  for (const body of bodies) {
-    const d = dist(ship.x, ship.y, body.x, body.y);
+  for (const body of system.bodies) {
+    const d = dist(wp.x, wp.y, body.x, body.y);
     if (d < nearestDist) {
       nearestDist = d;
       nearest = body;
     }
   }
-  if (nearest && nearestDist < 300) {
-    locationDisplay.textContent = `Near: ${nearest.name}`;
-  } else {
-    locationDisplay.textContent = 'Deep Space';
-  }
 
   // Click to scan
   const click = input.consumeClick();
   if (click) {
-    for (const body of bodies) {
+    for (const body of system.bodies) {
       const bsx = body.x - camera.x + canvas.width / 2;
       const bsy = body.y - camera.y + canvas.height / 2;
       if (dist(click.x, click.y, bsx, bsy) < body.radius + 20) {
@@ -128,10 +138,10 @@ function update(dt) {
     showScan(nearest);
   }
 
-  // Fuel regeneration near stars
-  for (const body of bodies) {
+  // Fuel regeneration near stars (compare world-space distances)
+  for (const body of system.bodies) {
     if (body.kind === 'star') {
-      const d = dist(ship.x, ship.y, body.x, body.y);
+      const d = dist(wp.x, wp.y, body.x, body.y);
       if (d < body.radius * 4 && d > body.radius) {
         ship.fuel = Math.min(100, ship.fuel + dt * 5);
         fuelDisplay.style.color = '#66ff66';
@@ -140,10 +150,12 @@ function update(dt) {
     }
   }
 
-  // System transition — travel far enough to discover new system
-  if (dist(ship.x, ship.y, 0, 0) > 2000) {
+  // System transition — use world-space distance from star (origin)
+  // If ship is in a planet's SOI, wp gives us the star-relative distance
+  if (dist(wp.x, wp.y, 0, 0) > 2000) {
     currentSystemSeed += 1;
-    bodies = generateSystem(currentSystemSeed);
+    system = generateSystem(currentSystemSeed);
+    ship.currentSOIBody = system.star;
     ship.x = 0;
     ship.y = -300;
     ship.vx *= 0.3;
@@ -181,7 +193,7 @@ function render() {
   setCameraHack(camera.x, camera.y);
 
   // Draw bodies (stars first, then planets, then anomalies)
-  const sorted = [...bodies].sort((a, b) => {
+  const sorted = [...system.bodies].sort((a, b) => {
     const order = { star: 0, planet: 1, anomaly: 2 };
     return (order[a.kind] || 0) - (order[b.kind] || 0);
   });
@@ -189,8 +201,10 @@ function render() {
     drawBody(ctx, body, camera, time);
   }
 
-  ship.draw(ctx, camera);
+  // Draw ship at world-space screen position
+  const wp = shipWorldPosition(ship, system);
+  ship.draw(ctx, camera, wp);
 
   // Minimap
-  drawMinimap(minimapCtx, ship, bodies, camera);
+  drawMinimap(minimapCtx, ship, system.bodies, camera);
 }
