@@ -127,6 +127,8 @@ Export `drawOrbitPath` as a named export.
 ### Task 3: Rewire main.js with new physics modules and remove old code
 **Type:** auto
 **Sequence:** 2
+**Status:** Complete
+**Completed:** 2026-04-01
 
 <files>
 js/main.js

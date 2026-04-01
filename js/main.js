@@ -2,7 +2,7 @@ import { Ship } from './ship.js';
 import { Input } from './input.js';
 import { Starfield } from './starfield.js';
 import { generateSystem, updateBodyPositions } from './celestial.js';
-import { drawBody, drawMinimap, setCameraHack } from './renderer.js';
+import { drawBody, drawMinimap, setCameraHack, drawOrbitPath } from './renderer.js';
 import { checkSOITransition, shipWorldPosition } from './physics.js';
 import { dist } from './utils.js';
 
@@ -26,11 +26,20 @@ const fuelDisplay = document.getElementById('fuel-display');
 const speedDisplay = document.getElementById('speed-display');
 const hud = document.getElementById('hud');
 const minimap = document.getElementById('minimap');
+const orbitHud = document.getElementById('orbit-hud');
+
+// Orbital HUD elements
+const altDisplay = document.getElementById('alt-display');
+const velDisplay = document.getElementById('vel-display');
+const apDisplay = document.getElementById('ap-display');
+const peDisplay = document.getElementById('pe-display');
+const periodDisplay = document.getElementById('period-display');
+const eccDisplay = document.getElementById('ecc-display');
+const soiDisplay = document.getElementById('soi-display');
 
 let running = false;
 let time = 0;
 
-const ship = new Ship();
 const input = new Input(canvas);
 const starfield = new Starfield();
 const camera = { x: 0, y: 0 };
@@ -38,6 +47,14 @@ const camera = { x: 0, y: 0 };
 // Generate a starting system
 let currentSystemSeed = 42;
 let system = generateSystem(currentSystemSeed);
+
+// Place ship in a circular orbit around the star
+const ship = new Ship();
+const INITIAL_ORBIT_RADIUS = 500;
+ship.x = INITIAL_ORBIT_RADIUS;
+ship.y = 0;
+ship.vx = 0;
+ship.vy = -Math.sqrt(system.star.mu / INITIAL_ORBIT_RADIUS);
 ship.currentSOIBody = system.star;
 
 function resize() {
@@ -52,6 +69,7 @@ startBtn.addEventListener('click', () => {
   startScreen.classList.add('hidden');
   hud.style.display = '';
   minimap.style.display = '';
+  orbitHud.style.display = '';
   running = true;
   requestAnimationFrame(loop);
 });
@@ -63,6 +81,7 @@ scanClose.addEventListener('click', () => {
 // Hide HUD initially
 hud.style.display = 'none';
 minimap.style.display = 'none';
+orbitHud.style.display = 'none';
 
 let lastTime = 0;
 
@@ -87,8 +106,8 @@ function update(dt) {
   const shipScreenY = worldPos.y - camera.y + canvas.height / 2;
   input.updateAim(shipScreenX, shipScreenY);
 
-  ship.update(dt, input, ship.currentSOIBody);
   updateBodyPositions(system, dt);
+  ship.update(dt, input, ship.currentSOIBody);
 
   // SOI transition check — must happen after both ship and body positions are updated
   checkSOITransition(ship, system);
@@ -103,11 +122,28 @@ function update(dt) {
   // HUD
   coordsDisplay.textContent = `x: ${Math.round(wp.x)}  y: ${Math.round(wp.y)}`;
   fuelDisplay.textContent = `Fuel: ${Math.round(ship.fuel)}%`;
-  speedDisplay.textContent = `Speed: ${Math.round(ship.getSpeed())}`;
+  speedDisplay.textContent = `Speed: ${ship.getSpeed().toFixed(1)}`;
 
   // SOI body name on location display
   const soiName = ship.currentSOIBody ? ship.currentSOIBody.name : 'Unknown';
   locationDisplay.textContent = `SOI: ${soiName}`;
+
+  // Orbital HUD
+  const orbit = ship.orbit;
+  altDisplay.textContent = Math.round(orbit.altitude);
+  velDisplay.textContent = ship.getSpeed().toFixed(1);
+  eccDisplay.textContent = orbit.e.toFixed(3);
+  soiDisplay.textContent = soiName;
+
+  if (orbit.e < 1) {
+    apDisplay.textContent = Math.round(orbit.apoapsis);
+    peDisplay.textContent = Math.round(orbit.periapsis);
+    periodDisplay.textContent = Math.round(orbit.T);
+  } else {
+    apDisplay.textContent = '\u221e';
+    peDisplay.textContent = Math.round(orbit.periapsis);
+    periodDisplay.textContent = '\u221e';
+  }
 
   // Find nearest body for scan interaction (use world-space distances)
   let nearest = null;
@@ -151,15 +187,14 @@ function update(dt) {
   }
 
   // System transition — use world-space distance from star (origin)
-  // If ship is in a planet's SOI, wp gives us the star-relative distance
   if (dist(wp.x, wp.y, 0, 0) > 2000) {
     currentSystemSeed += 1;
     system = generateSystem(currentSystemSeed);
     ship.currentSOIBody = system.star;
-    ship.x = 0;
-    ship.y = -300;
-    ship.vx *= 0.3;
-    ship.vy *= 0.3;
+    ship.x = INITIAL_ORBIT_RADIUS;
+    ship.y = 0;
+    ship.vx = 0;
+    ship.vy = -Math.sqrt(system.star.mu / INITIAL_ORBIT_RADIUS);
     camera.x = ship.x;
     camera.y = ship.y;
     scanPanel.classList.add('hidden');
@@ -200,6 +235,9 @@ function render() {
   for (const body of sorted) {
     drawBody(ctx, body, camera, time);
   }
+
+  // Draw ship's predicted orbit path
+  drawOrbitPath(ctx, camera, ship.orbit, ship.currentSOIBody);
 
   // Draw ship at world-space screen position
   const wp = shipWorldPosition(ship, system);
