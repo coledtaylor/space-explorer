@@ -26,12 +26,22 @@
       <p>Navigate the cosmos. Discover planets, stars, and anomalies.</p>
       <button id="start-btn">Launch</button>
       <div class="controls-hint">
-        <p>WASD / Arrow Keys — Thrust</p>
+        <p>W / Up — Prograde thrust</p>
+        <p>S / Down — Retrograde thrust</p>
+        <p>A / D — Rotate ship</p>
         <p>Mouse — Aim</p>
-        <p>Click — Scan object</p>
-        <p>E — Interact</p>
-        <p>M — Toggle map</p>
+        <p>E — Scan</p>
+        <p>M — Minimap</p>
       </div>
+    </div>
+    <div id="orbit-hud">
+      <div class="orbit-row"><span class="orbit-label">ALT</span><span id="alt-display">0</span><span class="orbit-unit">km</span></div>
+      <div class="orbit-row"><span class="orbit-label">VEL</span><span id="vel-display">0</span><span class="orbit-unit">km/s</span></div>
+      <div class="orbit-row"><span class="orbit-label">AP</span><span id="ap-display">0</span><span class="orbit-unit">km</span></div>
+      <div class="orbit-row"><span class="orbit-label">PE</span><span id="pe-display">0</span><span class="orbit-unit">km</span></div>
+      <div class="orbit-row"><span class="orbit-label">T</span><span id="period-display">0</span><span class="orbit-unit">s</span></div>
+      <div class="orbit-row"><span class="orbit-label">ECC</span><span id="ecc-display">0</span></div>
+      <div class="orbit-row"><span class="orbit-label">SOI</span><span id="soi-display">Star</span></div>
     </div>
     <div id="scan-panel" class="hidden">
       <button id="scan-close">&times;</button>
