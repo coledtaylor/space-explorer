@@ -120,6 +120,8 @@ Ship class is fully rewritten with gravitational physics, impulse thrust (progra
 ### Task 2: Create verification harness and validate orbital mechanics
 **Type:** auto
 **Sequence:** 2
+**Status:** complete
+Completed: 2026-04-01
 
 <files>
 tests/ship-physics-test.html
