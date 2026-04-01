@@ -43,3 +43,37 @@ export function hslToRgb(h, s, l) {
     Math.round((b + m) * 255),
   ];
 }
+
+// vec2 helpers — vectors are plain {x, y} objects
+
+export function vec2Add(a, b) {
+  return { x: a.x + b.x, y: a.y + b.y };
+}
+
+export function vec2Sub(a, b) {
+  return { x: a.x - b.x, y: a.y - b.y };
+}
+
+export function vec2Scale(v, s) {
+  return { x: v.x * s, y: v.y * s };
+}
+
+export function vec2Mag(v) {
+  return Math.sqrt(v.x * v.x + v.y * v.y);
+}
+
+export function vec2Normalize(v) {
+  const mag = vec2Mag(v);
+  if (mag === 0) return { x: 0, y: 0 };
+  return { x: v.x / mag, y: v.y / mag };
+}
+
+export function vec2Dot(a, b) {
+  return a.x * b.x + a.y * b.y;
+}
+
+// Normalize angle to [0, 2*PI)
+export function mod2pi(angle) {
+  const twoPi = 2 * Math.PI;
+  return ((angle % twoPi) + twoPi) % twoPi;
+}
