@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Orbit Tests</title>
+  <style>
+    body { font-family: monospace; background: #111; color: #eee; padding: 2em; }
+    h1 { color: #4fc3f7; }
+    .pass { color: #81c784; }
+    .fail { color: #e57373; }
+    .label { color: #aaa; }
+  </style>
+</head>
+<body>
+  <h1>Orbital Mechanics Tests</h1>
+  <div id="results"></div>
+
+  <script type="module">
+    import {
+      computeOrbitalElements,
+      stateFromOrbitalElements,
+      computeApoapsisRadius,
+      computePeriapsisRadius,
+      computeSOIRadius,
+      gravityAcceleration,
+    } from '../js/orbit.js';
+
+    const results = document.getElementById('results');
+
+    function assert(label, condition, details) {
+      const el = document.createElement('div');
+      el.innerHTML = condition
+        ? `<span class="pass">PASS</span> <span class="label">${label}</span>${details ? ' — ' + details : ''}`
+        : `<span class="fail">FAIL</span> <span class="label">${label}</span>${details ? ' — ' + details : ''}`;
+      results.appendChild(el);
+    }
+
+    const mu = 1000;
+
+    // Test 1: Circular orbit
+    const pos1 = { x: 100, y: 0 };
+    const vel1 = { x: 0, y: Math.sqrt(mu / 100) };
+    const elem1 = computeOrbitalElements(pos1, vel1, mu);
+    assert('Circular orbit: e < 0.001', elem1.e < 0.001, `e = ${elem1.e.toExponential(4)}`);
+    assert('Circular orbit: |a - 100| < 0.01', Math.abs(elem1.a - 100) < 0.01, `a = ${elem1.a.toFixed(6)}`);
+
+    // Test 2: Round-trip — circular orbit elements -> stateFromOrbitalElements -> compare
+    const state2 = stateFromOrbitalElements(elem1.a, elem1.e, elem1.omega, elem1.nu, mu);
+    const posErrX = Math.abs(state2.pos.x - pos1.x);
+    const posErrY = Math.abs(state2.pos.y - pos1.y);
+    const velErrX = Math.abs(state2.vel.x - vel1.x);
+    const velErrY = Math.abs(state2.vel.y - vel1.y);
+    assert(
+      'Round-trip: pos.x matches within 1e-6',
+      posErrX < 1e-6,
+      `err = ${posErrX.toExponential(4)}`
+    );
+    assert(
+      'Round-trip: pos.y matches within 1e-6',
+      posErrY < 1e-6,
+      `err = ${posErrY.toExponential(4)}`
+    );
+    assert(
+      'Round-trip: vel.x matches within 1e-6',
+      velErrX < 1e-6,
+      `err = ${velErrX.toExponential(4)}`
+    );
+    assert(
+      'Round-trip: vel.y matches within 1e-6',
+      velErrY < 1e-6,
+      `err = ${velErrY.toExponential(4)}`
+    );
+
+    // Test 3: Elliptical orbit (sub-circular velocity)
+    const pos3 = { x: 100, y: 0 };
+    const vel3 = { x: 0, y: Math.sqrt(mu / 100) * 0.8 };
+    const elem3 = computeOrbitalElements(pos3, vel3, mu);
+    const periapsis3 = computePeriapsisRadius(elem3.a, elem3.e);
+    const apoapsis3 = computeApoapsisRadius(elem3.a, elem3.e);
+    assert('Elliptical orbit: 0 < e < 1', elem3.e > 0 && elem3.e < 1, `e = ${elem3.e.toFixed(6)}`);
+    assert('Elliptical orbit: periapsis < 100', periapsis3 < 100, `periapsis = ${periapsis3.toFixed(4)}`);
+    assert(
+      'Elliptical orbit: apoapsis formula matches a*(1+e)',
+      Math.abs(apoapsis3 - elem3.a * (1 + elem3.e)) < 1e-10,
+      `apoapsis = ${apoapsis3.toFixed(4)}`
+    );
+
+    // Test 4: SOI radius (Earth-Sun system)
+    const soi = computeSOIRadius(5.972e24, 1.989e30, 1.496e8);
+    const soiExpected = 929000;
+    const soiErr = Math.abs(soi - soiExpected) / soiExpected;
+    assert('SOI: Earth-Sun within 5%', soiErr < 0.05, `soi = ${soi.toFixed(0)} km, expected ~${soiExpected}`);
+
+    // Test 5: Gravity acceleration — ship at {100,0}, body at origin, mu=1000
+    // Expected: points in -x direction, magnitude = mu/r^2 = 1000/10000 = 0.1
+    const grav = gravityAcceleration({ x: 100, y: 0 }, { x: 0, y: 0 }, mu);
+    const gravMag = Math.sqrt(grav.x * grav.x + grav.y * grav.y);
+    assert(
+      'Gravity: points in -x direction (grav.x < 0)',
+      grav.x < 0,
+      `grav.x = ${grav.x.toFixed(6)}`
+    );
+    assert(
+      'Gravity: y component ~= 0',
+      Math.abs(grav.y) < 1e-12,
+      `grav.y = ${grav.y}`
+    );
+    assert(
+      'Gravity: magnitude = mu/r^2 = 0.1',
+      Math.abs(gravMag - 0.1) < 1e-10,
+      `|g| = ${gravMag.toFixed(8)}`
+    );
+  </script>
+</body>
+</html>

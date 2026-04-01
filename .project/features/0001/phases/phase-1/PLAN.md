@@ -135,11 +135,16 @@ After creating the module, verify correctness by creating a temporary HTML test 
   Completed: 2026-04-01
 - [x] `js/utils.js` retains all original exports (lerp, dist, clamp, seededRandom, hslToRgb)
   Completed: 2026-04-01
-- [ ] `js/orbit.js` exports all 7 functions: computeOrbitalElements, stateFromOrbitalElements, computeApoapsisRadius, computePeriapsisRadius, trueAnomalyAtTime, computeSOIRadius, gravityAcceleration
-- [ ] All new functions are pure (no module state, no side effects, no console logging)
-- [ ] Code style matches conventions: 2-space indent, single quotes, semicolons, named exports, camelCase
-- [ ] `tests/orbit-test.html` runs in browser with all checks passing
-- [ ] Round-trip test (state -> elements -> state) passes within 1e-6 tolerance
+- [x] `js/orbit.js` exports all 7 functions: computeOrbitalElements, stateFromOrbitalElements, computeApoapsisRadius, computePeriapsisRadius, trueAnomalyAtTime, computeSOIRadius, gravityAcceleration
+  Completed: 2026-04-01
+- [x] All new functions are pure (no module state, no side effects, no console logging)
+  Completed: 2026-04-01
+- [x] Code style matches conventions: 2-space indent, single quotes, semicolons, named exports, camelCase
+  Completed: 2026-04-01
+- [x] `tests/orbit-test.html` runs in browser with all checks passing
+  Completed: 2026-04-01
+- [x] Round-trip test (state -> elements -> state) passes within 1e-6 tolerance
+  Completed: 2026-04-01
 
 ## Success Criteria
 Given a position and velocity around a body, orbital elements are correctly computed and round-trip back to the original state vector. SOI radius matches known physical values. The unit system is fully documented in `js/units.js`. All math functions are pure and follow project conventions.
