@@ -1,4 +1,6 @@
 import { seededRandom, hslToRgb } from './utils.js';
+import { G, AU } from './units.js';
+import { computeSOIRadius, trueAnomalyAtTime, stateFromOrbitalElements } from './orbit.js';
 
 const PLANET_NAMES = [
   'Aethon', 'Bellara', 'Cryon', 'Delvari', 'Elorix', 'Fyrnath',
@@ -21,9 +23,34 @@ const ANOMALY_NAMES = [
 const PLANET_TYPES = ['Rocky', 'Gas Giant', 'Ice World', 'Ocean World', 'Desert', 'Volcanic', 'Lush'];
 const STAR_TYPES = ['Red Dwarf', 'Yellow Star', 'Blue Giant', 'White Dwarf', 'Neutron Star'];
 
+// Solar mass in kg
+const SOLAR_MASS = 1.989e30;
+// Earth mass in kg
+const EARTH_MASS = 5.972e24;
+
+const STAR_MASSES = {
+  'Red Dwarf': 0.3 * SOLAR_MASS,
+  'Yellow Star': 1.0 * SOLAR_MASS,
+  'Blue Giant': 10.0 * SOLAR_MASS,
+  'White Dwarf': 0.6 * SOLAR_MASS,
+  'Neutron Star': 1.5 * SOLAR_MASS,
+};
+
+const PLANET_MASSES = {
+  'Rocky': 1.0 * EARTH_MASS,
+  'Gas Giant': 300.0 * EARTH_MASS,
+  'Ice World': 15.0 * EARTH_MASS,
+  'Ocean World': 2.0 * EARTH_MASS,
+  'Desert': 0.8 * EARTH_MASS,
+  'Volcanic': 1.1 * EARTH_MASS,
+  'Lush': 1.5 * EARTH_MASS,
+};
+
+// Module-level elapsed time accumulator for orbit propagation
+let elapsedTime = 0;
+
 export function generateSystem(seed) {
   const rng = seededRandom(seed);
-  const bodies = [];
 
   // Central star
   const starTypeIdx = Math.floor(rng() * STAR_TYPES.length);
@@ -33,13 +60,17 @@ export function generateSystem(seed) {
   const hue = starHues[starType];
   const [r, g, b] = hslToRgb(hue, 0.8, 0.6);
 
-  bodies.push({
+  const starMass = STAR_MASSES[starType];
+  const star = {
     kind: 'star',
     name: STAR_NAMES[Math.floor(rng() * STAR_NAMES.length)],
     subtype: starType,
     x: 0,
     y: 0,
     radius: starSizes[starType],
+    mass: starMass,
+    mu: G * starMass,
+    soiRadius: 100 * AU,
     color: `rgb(${r},${g},${b})`,
     glowColor: `rgba(${r},${g},${b},0.15)`,
     hue,
@@ -49,29 +80,46 @@ export function generateSystem(seed) {
       'Temperature': `${(3000 + rng() * 30000).toFixed(0)} K`,
       'Luminosity': `${(rng() * 100).toFixed(1)} L☉`,
     },
-  });
+  };
 
   // Planets
   const planetCount = 3 + Math.floor(rng() * 5);
+  const planets = [];
+
+  // Start ~0.3 AU, increase with Titius-Bode-like spacing
+  let orbitalRadius = (0.3 + rng() * 0.2) * AU;
   for (let i = 0; i < planetCount; i++) {
-    const orbitRadius = 200 + i * (150 + rng() * 100);
-    const angle = rng() * Math.PI * 2;
     const typeIdx = Math.floor(rng() * PLANET_TYPES.length);
     const pType = PLANET_TYPES[typeIdx];
     const pHue = rng() * 360;
     const [pr, pg, pb] = hslToRgb(pHue, 0.4 + rng() * 0.3, 0.3 + rng() * 0.3);
     const pRadius = 12 + rng() * 24;
 
-    bodies.push({
+    const planetMass = PLANET_MASSES[pType];
+    const planetMu = G * planetMass;
+    const soiRadius = computeSOIRadius(planetMass, starMass, orbitalRadius);
+
+    const e = rng() * 0.15;
+    const omega = rng() * 2 * Math.PI;
+    const nu0 = rng() * 2 * Math.PI;
+
+    const orbitalElements = { a: orbitalRadius, e, omega, nu0 };
+
+    // Compute initial position from orbital elements
+    const { pos } = stateFromOrbitalElements(orbitalRadius, e, omega, nu0, star.mu);
+
+    planets.push({
       kind: 'planet',
       name: PLANET_NAMES[(seed * 7 + i * 13) % PLANET_NAMES.length],
       subtype: pType,
-      x: Math.cos(angle) * orbitRadius,
-      y: Math.sin(angle) * orbitRadius,
-      orbitRadius,
-      orbitAngle: angle,
-      orbitSpeed: 0.02 + rng() * 0.04,
+      x: pos.x,
+      y: pos.y,
       radius: pRadius,
+      mass: planetMass,
+      mu: planetMu,
+      soiRadius,
+      orbitalElements,
+      parentBody: star,
       color: `rgb(${pr},${pg},${pb})`,
       hue: pHue,
       description: generatePlanetDesc(pType, rng),
@@ -83,13 +131,18 @@ export function generateSystem(seed) {
         'Moons': `${Math.floor(rng() * 6)}`,
       },
     });
+
+    // Titius-Bode-like spacing: multiply by 1.5-2.0 each step, plus a small random offset
+    orbitalRadius *= 1.5 + rng() * 0.5;
   }
+
+  const bodies = [star, ...planets];
 
   // Anomaly (30% chance)
   if (rng() > 0.7) {
     const ax = (rng() - 0.5) * 1500;
     const ay = (rng() - 0.5) * 1500;
-    bodies.push({
+    const anomaly = {
       kind: 'anomaly',
       name: ANOMALY_NAMES[Math.floor(rng() * ANOMALY_NAMES.length)],
       subtype: 'Spatial Anomaly',
@@ -106,10 +159,14 @@ export function generateSystem(seed) {
         'Stability': rng() > 0.5 ? 'Stable' : 'Fluctuating',
         'Threat Level': rng() > 0.6 ? 'Moderate' : 'Low',
       },
-    });
+    };
+    bodies.push(anomaly);
   }
 
-  return bodies;
+  // Reset elapsed time when a new system is generated
+  elapsedTime = 0;
+
+  return { star, planets, bodies };
 }
 
 function generatePlanetDesc(type, rng) {
@@ -126,12 +183,18 @@ function generatePlanetDesc(type, rng) {
   return options[Math.floor(rng() * options.length)];
 }
 
-export function updateOrbits(bodies, dt) {
-  for (const body of bodies) {
-    if (body.orbitRadius) {
-      body.orbitAngle += body.orbitSpeed * dt;
-      body.x = Math.cos(body.orbitAngle) * body.orbitRadius;
-      body.y = Math.sin(body.orbitAngle) * body.orbitRadius;
-    }
+export function updateBodyPositions(system, dt) {
+  elapsedTime += dt;
+
+  for (const planet of system.planets) {
+    const { a, e, omega, nu0 } = planet.orbitalElements;
+    const mu = planet.parentBody.mu;
+
+    // Propagate true anomaly to current elapsed time
+    const nu = trueAnomalyAtTime(elapsedTime, a, e, mu, nu0);
+    const { pos } = stateFromOrbitalElements(a, e, omega, nu, mu);
+
+    planet.x = pos.x;
+    planet.y = pos.y;
   }
 }
