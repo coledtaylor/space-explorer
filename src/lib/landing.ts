@@ -31,12 +31,29 @@ export interface LandingTelemetry {
 
 // Threshold constants governing landing outcome decisions.
 // All velocity values are in game-units per second.
+//
+// KSP-SCALE REVIEW (performed during Feature 0006, Phase 1):
+//
+// APPROACH_FACTOR = 3:
+//   At new scale, a 500 gu Rocky planet triggers approach at 1500 gu altitude (3× radius),
+//   and a 2000 gu Gas Giant triggers at 6000 gu. This is proportionally the same as before —
+//   the factor is scale-agnostic because it multiplies body.radius directly. No change needed.
+//
+// SAFE_DESCENT_RATE = 10, CRASH_DESCENT_RATE = 50:
+//   Surface gravity = mu / radius².  At new KSP scale:
+//     Rocky planet:  mu = G × 5_220_000 ≈ 5.22M.  g = 5.22M / 500² ≈ 20.9 gu/s².
+//     Gas Giant:     mu = G × 104_400_000.         g = 104.4M / 2000² ≈ 26.1 gu/s².
+//   These are higher surface gravities than the old arcade scale, but SAFE_DESCENT_RATE
+//   and CRASH_DESCENT_RATE are approach/contact thresholds, not gravity-dependent parameters.
+//   The ship physics (THRUST_POWER, etc.) will need separate tuning in a future phase;
+//   these landing outcome thresholds remain reasonable as-is for the new scale.
 export const LANDING_THRESHOLDS = {
   // Maximum descent rate for a successful landing
   SAFE_DESCENT_RATE: 10,
   // Maximum horizontal velocity for a successful landing
   SAFE_HORIZONTAL_VEL: 15,
-  // Multiplier on body radius to compute the approach trigger distance
+  // Multiplier on body radius to compute the approach trigger distance.
+  // Scale-agnostic: 3× radius works at both arcade and KSP scale.
   APPROACH_FACTOR: 3,
   // Multiplier on body radius to compute the gas-giant crush boundary
   CRUSH_FACTOR: 0.5,

@@ -9,6 +9,24 @@ import type {
 import { seededRandom, hslToRgb } from './utils.js';
 import { G } from './units.js';
 import { computeSOIRadius, trueAnomalyAtTime, stateFromOrbitalElements } from './orbit.js';
+import {
+  STAR_RADII,
+  STAR_MASSES as SCALE_STAR_MASSES,
+  PLANET_RADIUS_RANGE,
+  PLANET_MASSES as SCALE_PLANET_MASSES,
+  MOON_RADIUS_RANGE,
+  MOON_MASS_MIN_FRAC as SCALE_MOON_MASS_MIN_FRAC,
+  MOON_MASS_MAX_FRAC as SCALE_MOON_MASS_MAX_FRAC,
+  INNERMOST_PLANET_ORBIT_MIN,
+  INNERMOST_PLANET_ORBIT_RANGE,
+  ORBITAL_SPACING_MIN,
+  ORBITAL_SPACING_RANGE,
+  MOON_MIN_SURFACE_GAP,
+  MOON_ORBIT_GAP,
+  STAR_SOI_RADIUS,
+  ANOMALY_SPAWN_RADIUS,
+  ANOMALY_RADIUS_RANGE,
+} from './scaleConfig.js';
 
 const PLANET_NAMES: readonly string[] = [
   'Aethon', 'Bellara', 'Cryon', 'Delvari', 'Elorix', 'Fyrnath',
@@ -50,32 +68,12 @@ const MOON_COUNTS: Readonly<Record<string, [number, number]>> = {
   'Lush': [0, 3],
 };
 
-// Game-scale masses (tuned for playable orbital mechanics)
-// With G=1, star.mu = star.mass, so circular velocity at r is sqrt(mass/r)
-// Yellow Star mass=50000 at r=400 gives v=sqrt(125)≈11 gu/s, T≈228s (~4min)
-const STAR_MASSES: Readonly<Record<string, number>> = {
-  'Red Dwarf': 15000,
-  'Yellow Star': 50000,
-  'Blue Giant': 500000,
-  'White Dwarf': 30000,
-  'Neutron Star': 75000,
-};
-
-// Planet masses — large enough for meaningful SOI radii
-// SOI = r * (m_planet/m_star)^0.4
-const PLANET_MASSES: Readonly<Record<string, number>> = {
-  'Rocky': 500,
-  'Gas Giant': 10000,
-  'Ice World': 2000,
-  'Ocean World': 700,
-  'Desert': 400,
-  'Volcanic': 550,
-  'Lush': 800,
-};
-
-// Moon mass as a fraction of parent planet mass (min 0.5%, max 5%)
-const MOON_MASS_MIN_FRAC = 0.005;
-const MOON_MASS_MAX_FRAC = 0.05;
+// Star and planet masses are imported from scaleConfig (KSP-scale values).
+// Aliases for local use:
+const STAR_MASSES = SCALE_STAR_MASSES;
+const PLANET_MASSES = SCALE_PLANET_MASSES;
+const MOON_MASS_MIN_FRAC = SCALE_MOON_MASS_MIN_FRAC;
+const MOON_MASS_MAX_FRAC = SCALE_MOON_MASS_MAX_FRAC;
 
 // Module-level elapsed time accumulator for orbit propagation
 let elapsedTime: number = 0;
@@ -93,27 +91,20 @@ export function generateSystem(seed: number): StarSystem {
     'White Dwarf': 200,
     'Neutron Star': 270,
   };
-  const starSizes: Readonly<Record<string, number>> = {
-    'Red Dwarf': 40,
-    'Yellow Star': 55,
-    'Blue Giant': 80,
-    'White Dwarf': 30,
-    'Neutron Star': 25,
-  };
   const hue = starHues[starType] ?? 45;
   const [r, g, b] = hslToRgb(hue, 0.8, 0.6);
 
-  const starMass = STAR_MASSES[starType] ?? 50000;
+  const starMass = STAR_MASSES[starType] ?? 600_000_000;
   const star: StarBody = {
     kind: 'star',
     name: STAR_NAMES[Math.floor(rng() * STAR_NAMES.length)] ?? 'Sol',
     subtype: starType,
     x: 0,
     y: 0,
-    radius: starSizes[starType] ?? 55,
+    radius: STAR_RADII[starType] ?? 7000,
     mass: starMass,
     mu: G * starMass,
-    soiRadius: 5000,
+    soiRadius: STAR_SOI_RADIUS,
     color: `rgb(${r},${g},${b})`,
     glowColor: `rgba(${r},${g},${b},0.15)`,
     hue,
@@ -129,14 +120,15 @@ export function generateSystem(seed: number): StarSystem {
   const planetCount = 3 + Math.floor(rng() * 5);
   const planets: PlanetBody[] = [];
 
-  // Start 200-300 game units, increase with Titius-Bode-like spacing
-  let orbitalRadius = 200 + rng() * 100;
+  // Start at KSP-scale innermost orbit (50000–80000 gu), increase with Titius-Bode-like spacing
+  let orbitalRadius = INNERMOST_PLANET_ORBIT_MIN + rng() * INNERMOST_PLANET_ORBIT_RANGE;
   for (let i = 0; i < planetCount; i++) {
     const typeIdx = Math.floor(rng() * PLANET_TYPES.length);
     const pType = PLANET_TYPES[typeIdx] ?? 'Rocky';
     const pHue = rng() * 360;
-    const [pr, pg, pb] = hslToRgb(pHue, 0.4 + rng() * 0.3, 0.3 + rng() * 0.3);
-    const pRadius = 12 + rng() * 24;
+    const [pr, pg, pb] = hslToRgb(pHue, 0.4 + rng() * 0.3, 0.5 + rng() * 0.2);
+    const [pRadMin, pRadMax] = PLANET_RADIUS_RANGE[pType] ?? [500, 900];
+    const pRadius = pRadMin + rng() * (pRadMax - pRadMin);
 
     const planetMass = PLANET_MASSES[pType] ?? 500;
     const planetMu = G * planetMass;
@@ -178,8 +170,8 @@ export function generateSystem(seed: number): StarSystem {
     };
     planets.push(planet);
 
-    // Titius-Bode-like spacing: multiply by 1.5-2.0 each step, plus a small random offset
-    orbitalRadius *= 1.5 + rng() * 0.5;
+    // Titius-Bode-like spacing: multiply by 1.5-2.0 each step (from scaleConfig)
+    orbitalRadius *= ORBITAL_SPACING_MIN + rng() * ORBITAL_SPACING_RANGE;
   }
 
   // Generate moons for each planet
@@ -190,17 +182,19 @@ export function generateSystem(seed: number): StarSystem {
     const moonCount = minMoons + Math.floor(rng() * (maxMoons - minMoons + 1));
     const maxSoiRadius = planet.soiRadius * 0.8;
 
-    // Track outermost radius to avoid orbit overlaps
-    let nextMinRadius = planet.radius + 8;
+    // Track outermost radius to avoid orbit overlaps.
+    // Start just beyond the planet surface with the KSP-scale minimum surface gap.
+    let nextMinRadius = planet.radius + MOON_MIN_SURFACE_GAP;
 
     for (let m = 0; m < moonCount; m++) {
       const moonMassFrac = MOON_MASS_MIN_FRAC + rng() * (MOON_MASS_MAX_FRAC - MOON_MASS_MIN_FRAC);
       const moonMass = planet.mass * moonMassFrac;
       const moonMu = G * moonMass;
-      const moonRadius = 3 + rng() * 5;
+      const [moonRadMin, moonRadMax] = MOON_RADIUS_RANGE;
+      const moonRadius = moonRadMin + rng() * (moonRadMax - moonRadMin);
 
       // Orbital radius: start after gap, space each moon with a gap between them
-      const gap = moonRadius + 5;
+      const gap = moonRadius + MOON_ORBIT_GAP;
       const moonOrbitalRadius = nextMinRadius + gap + rng() * gap;
 
       // Check if this orbit fits within the planet's SOI
@@ -217,7 +211,7 @@ export function generateSystem(seed: number): StarSystem {
       const { pos: moonLocalPos } = stateFromOrbitalElements(moonOrbitalRadius, moonE, moonOmega, moonNu0, planet.mu);
 
       const moonHue = rng() * 360;
-      const [mr, mg, mb] = hslToRgb(moonHue, 0.2 + rng() * 0.2, 0.4 + rng() * 0.2);
+      const [mr, mg, mb] = hslToRgb(moonHue, 0.2 + rng() * 0.2, 0.55 + rng() * 0.15);
 
       const moon: MoonBody = {
         kind: 'moon',
@@ -245,8 +239,8 @@ export function generateSystem(seed: number): StarSystem {
       planet.children.push(moon);
       allMoons.push(moon);
 
-      // Advance next min radius beyond the apoapsis of this moon orbit
-      nextMinRadius = moonOrbitalRadius * (1 + moonE) + moonRadius + 5;
+      // Advance next min radius beyond the apoapsis of this moon orbit, with a gap
+      nextMinRadius = moonOrbitalRadius * (1 + moonE) + moonRadius + MOON_ORBIT_GAP;
     }
 
     // Update moon count in planet details
@@ -255,17 +249,18 @@ export function generateSystem(seed: number): StarSystem {
 
   const bodies: CelestialBody[] = [star, ...planets, ...allMoons];
 
-  // Anomaly (30% chance)
+  // Anomaly (30% chance) — spawned within ANOMALY_SPAWN_RADIUS of the origin
   if (rng() > 0.7) {
-    const ax = (rng() - 0.5) * 1500;
-    const ay = (rng() - 0.5) * 1500;
+    const ax = (rng() - 0.5) * 2 * ANOMALY_SPAWN_RADIUS;
+    const ay = (rng() - 0.5) * 2 * ANOMALY_SPAWN_RADIUS;
+    const [anomalyRadMin, anomalyRadMax] = ANOMALY_RADIUS_RANGE;
     const anomaly: AnomalyBody = {
       kind: 'anomaly',
       name: ANOMALY_NAMES[Math.floor(rng() * ANOMALY_NAMES.length)] ?? 'The Rift',
       subtype: 'Spatial Anomaly',
       x: ax,
       y: ay,
-      radius: 20 + rng() * 15,
+      radius: anomalyRadMin + rng() * (anomalyRadMax - anomalyRadMin),
       color: '#b040ff',
       glowColor: 'rgba(176, 64, 255, 0.2)',
       hue: 280,

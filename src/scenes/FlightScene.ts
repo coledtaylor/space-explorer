@@ -3,20 +3,34 @@ import { Ship } from '../objects/Ship';
 import { CelestialBodyRenderer } from '../objects/CelestialBody';
 import { generateSystem, updateBodyPositions } from '../lib/celestial';
 import { checkSOITransition, shipWorldPosition, buildOrbitFromState } from '../lib/physics';
-import { propagateTrajectory } from '../lib/trajectory';
 import { stateFromOrbitalElements } from '../lib/orbit';
 import { seededRandom } from '../lib/utils';
 import { isLandableBody, LANDING_THRESHOLDS } from '../lib/landing.js';
+import {
+  SYSTEM_TRANSITION_RADIUS as SCALE_SYSTEM_TRANSITION_RADIUS,
+  SHIP_START_ORBIT_FACTOR,
+} from '../lib/scaleConfig.js';
 import type { StarSystem, MassiveBody, ShipState } from '../types/index';
 import type { InputState } from '../objects/Ship';
 import type { LandingSceneData } from './LandingScene';
+
+// Data passed back from SurfaceScene (or LandingScene crash/ascent) when returning to flight
+interface FlightResumeData {
+  shipX: number;
+  shipY: number;
+  shipVx: number;
+  shipVy: number;
+  shipAngle: number;
+  shipFuel: number;
+  soiBody?: MassiveBody;
+}
 
 // Pixels per game-unit at default zoom
 const DEFAULT_ZOOM = 1.0;
 // Smoothing factor for camera lerp (fraction of distance closed per second)
 const CAMERA_LERP = 4.0;
-// Distance from origin (star) that triggers a new system
-const SYSTEM_TRANSITION_RADIUS = 2000;
+// Distance from origin (star) that triggers a new system (from scaleConfig — 1,500,000 gu)
+const SYSTEM_TRANSITION_RADIUS = SCALE_SYSTEM_TRANSITION_RADIUS;
 // Starting seed
 const INITIAL_SEED = 42;
 
@@ -33,10 +47,13 @@ const HUD_COLOR_FUEL_FULL = 0x40c860;
 const HUD_COLOR_FUEL_LOW = 0xff6040;
 const HUD_COLOR_FUEL_BG = 0x1a2a3a;
 
-// Trajectory rendering
-const TRAJECTORY_MAX_TIME = 600;
-const TRAJECTORY_STEP_SIZE = 1.0;
-const TRAJECTORY_MAX_SEGMENTS = 3;
+// Trajectory rendering — at KSP scale, step size and count are increased to cover
+// meaningful distances (10 gu/step × 1000 steps = 10000 gu of prediction, enough
+// to show at least one partial orbit at typical planet orbital speeds).
+const TRAJECTORY_STEP_SIZE = 10.0;
+const TRAJECTORY_STEP_COUNT = 1000;
+const TRAJECTORY_ALPHA_START = 0.7;
+const TRAJECTORY_ALPHA_END = 0.15;
 
 // Starfield configuration
 interface StarLayer {
@@ -106,8 +123,22 @@ export class FlightScene extends Phaser.Scene {
 
   private starLayers: StarPoint[][] = [];
 
+  // (trajectory is computed and drawn inline each frame — no caching needed)
+
+  // Non-null when the scene is being resumed after landing/surface (set in init())
+  private _resumeData: FlightResumeData | null = null;
+
   constructor() {
     super({ key: 'FlightScene' });
+  }
+
+  init(data: FlightResumeData | Record<string, never>): void {
+    // Only treat as a resume if the data includes ship position from a prior scene
+    if ('shipX' in data) {
+      this._resumeData = data as FlightResumeData;
+    } else {
+      this._resumeData = null;
+    }
   }
 
   preload(): void {
@@ -118,18 +149,27 @@ export class FlightScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor('#010118');
     this.cameras.main.setZoom(DEFAULT_ZOOM);
 
-    // Generate the initial star system
+    // Generate the star system — use existing seed when resuming so the same
+    // system is restored after a landing sequence
     this.system = generateSystem(this.currentSeed);
-    this.soiBody = this.system.star;
 
-    // Place ship in a circular orbit around the star
-    this._initShipCircularOrbit();
+    if (this._resumeData !== null) {
+      // Resuming from landing/surface — restore exact ship state
+      this._initShipFromResumeData(this._resumeData);
+      this._resumeData = null;
+    } else {
+      // Fresh start — place ship in circular orbit around the star
+      this.soiBody = this.system.star;
+      this._initShipCircularOrbit();
+    }
 
     // Set up renderers
     this.bodyRenderer = new CelestialBodyRenderer(this);
-    this.worldGfx = this.add.graphics();
-    this.shipGfx = this.add.graphics();
-    this.starfieldGfx = this.add.graphics();
+    // All graphics use screen-space coordinates (we do world-to-screen transform manually)
+    // so set scrollFactor(0) to prevent camera from transforming them again
+    this.worldGfx = this.add.graphics().setScrollFactor(0);
+    this.shipGfx = this.add.graphics().setScrollFactor(0);
+    this.starfieldGfx = this.add.graphics().setScrollFactor(0);
 
     // Depth ordering: starfield behind world behind ship, HUD on top
     this.starfieldGfx.setDepth(0);
@@ -152,6 +192,15 @@ export class FlightScene extends Phaser.Scene {
     // Position camera at ship world position immediately (no lerp on first frame)
     const worldPos = this._shipWorldPosition();
     this._setCameraCenter(worldPos.x, worldPos.y);
+
+    // Ensure science state is initialised in the registry — only set defaults the
+    // very first time so that science points persist across landing/surface cycles.
+    if (this.registry.get('sciencePoints') === null || this.registry.get('sciencePoints') === undefined) {
+      this.registry.set('sciencePoints', 0);
+    }
+    if (this.registry.get('scannedBodies') === null || this.registry.get('scannedBodies') === undefined) {
+      this.registry.set('scannedBodies', new Set<string>());
+    }
 
     // Build HUD (fixed to camera — use setScrollFactor(0))
     this._initHud();
@@ -233,8 +282,10 @@ export class FlightScene extends Phaser.Scene {
   private _initShipCircularOrbit(): void {
     this.ship = new Ship();
 
-    // Place ship in circular orbit: at (0, -r) with tangential velocity
-    const orbitRadius = this.system.star.radius + 300;
+    // Place ship in circular orbit at star.radius * SHIP_START_ORBIT_FACTOR from star center.
+    // For a Yellow Star (radius=7000), factor=8 gives orbitRadius=56000 gu, well within
+    // the innermost planet band and producing v_circ ≈ 103 gu/s.
+    const orbitRadius = this.system.star.radius * SHIP_START_ORBIT_FACTOR;
     const circularSpeed = Math.sqrt(this.system.star.mu / orbitRadius);
 
     this.ship.x = 0;
@@ -243,6 +294,23 @@ export class FlightScene extends Phaser.Scene {
     this.ship.vx = circularSpeed;
     this.ship.vy = 0;
     this.ship.angle = 0;
+  }
+
+  private _initShipFromResumeData(data: FlightResumeData): void {
+    this.ship = new Ship();
+    this.ship.x = data.shipX;
+    this.ship.y = data.shipY;
+    this.ship.vx = data.shipVx;
+    this.ship.vy = data.shipVy;
+    this.ship.angle = data.shipAngle;
+    this.ship.fuel = data.shipFuel;
+
+    // Restore the SOI body if one was provided; otherwise fall back to star
+    if (data.soiBody !== undefined) {
+      this.soiBody = data.soiBody;
+    } else {
+      this.soiBody = this.system.star;
+    }
   }
 
   private _initStarfield(): void {
@@ -304,8 +372,8 @@ export class FlightScene extends Phaser.Scene {
 
     this.hud = { soiLabel, velocityLabel, altitudeLabel, fuelLabel, systemLabel };
 
-    // Trajectory graphics object (world-space, depth between world and ship)
-    const trajectoryGfx = this.add.graphics().setDepth(1);
+    // Trajectory graphics object (screen-space, depth between world and ship)
+    const trajectoryGfx = this.add.graphics().setScrollFactor(0).setDepth(1);
 
     this.hudGfx = { fuelBarBg, fuelBar, trajectoryGfx };
   }
@@ -429,12 +497,20 @@ export class FlightScene extends Phaser.Scene {
     // Only trigger for planets and moons with landing capability
     if (!isLandableBody(soiBody)) return false;
 
-    // Ship position is relative to SOI body center, so distance from origin = distance to body center
+    // Ship's orbital periapsis must be below the surface — otherwise the ship
+    // is in a stable orbit and should not be forced into a landing sequence.
+    if (this.ship.orbit.periapsis > soiBody.radius) return false;
+
+    // Ship must be close to the body surface
     const distToCenter = Math.sqrt(shipState.pos.x * shipState.pos.x + shipState.pos.y * shipState.pos.y);
     const altitude = distToCenter - soiBody.radius;
     const approachThreshold = soiBody.radius * LANDING_THRESHOLDS.APPROACH_FACTOR;
 
     if (altitude >= approachThreshold) return false;
+
+    // Ship must be descending (moving toward the body, not away)
+    const radialVel = (shipState.pos.x * shipState.vel.x + shipState.pos.y * shipState.vel.y) / distToCenter;
+    if (radialVel > 0) return false; // positive radial velocity = moving away
 
     // Trigger LandingScene
     const data: LandingSceneData = {
@@ -445,6 +521,7 @@ export class FlightScene extends Phaser.Scene {
       shipAngle: this.ship.angle,
       shipFuel: this.ship.fuel,
       body: soiBody,
+      systemSeed: this.currentSeed,
     };
     this.scene.start('LandingScene', data);
     return true;
@@ -505,8 +582,7 @@ export class FlightScene extends Phaser.Scene {
     zoom: number,
     cam: Phaser.Cameras.Scene2D.Camera,
   ): void {
-    const b = a * Math.sqrt(1 - e * e);
-    const steps = 64;
+    const steps = 128;
 
     gfx.beginPath();
     for (let i = 0; i <= steps; i++) {
@@ -527,9 +603,6 @@ export class FlightScene extends Phaser.Scene {
       else gfx.lineTo(sx, sy);
     }
     gfx.strokePath();
-
-    // Suppress unused vars
-    void b;
   }
 
   private _drawCelestialBodies(timeSec: number, zoom: number, cam: Phaser.Cameras.Scene2D.Camera): void {
@@ -554,38 +627,80 @@ export class FlightScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Draw trajectory prediction by simulating forward from the ship's current
+   * state and drawing directly — same approach as _drawOrbitEllipse.
+   *
+   * Physics: Velocity-Verlet integration under the current SOI body's gravity.
+   * The sim stays in SOI-relative coordinates (body at origin).
+   * Each position is converted world → screen and drawn immediately.
+   */
   private _drawTrajectory(zoom: number, cam: Phaser.Cameras.Scene2D.Camera): void {
-    this.hudGfx.trajectoryGfx.clear();
+    const gfx = this.hudGfx.trajectoryGfx;
+    gfx.clear();
 
-    const shipState = this._buildShipState();
-    const segments = propagateTrajectory(shipState, this.system, {
-      maxTime: TRAJECTORY_MAX_TIME,
-      stepSize: TRAJECTORY_STEP_SIZE,
-      maxSegments: TRAJECTORY_MAX_SEGMENTS,
-      simBaseTime: this.elapsedTime,
-    });
+    const mu = this.soiBody.mu;
+    if (mu <= 0) return;
 
-    for (const segment of segments) {
-      if (segment.points.length < 2) continue;
+    // Ship state in SOI-relative frame
+    let px = this.ship.x;
+    let py = this.ship.y;
+    let vx = this.ship.vx;
+    let vy = this.ship.vy;
 
-      this.hudGfx.trajectoryGfx.lineStyle(1, 0x4fc3f7, 0.35);
-      this.hudGfx.trajectoryGfx.beginPath();
+    // SOI body world position (for converting SOI-relative → world)
+    const bodyX = this.soiBody.x;
+    const bodyY = this.soiBody.y;
 
-      const first = segment.points[0];
-      if (!first) continue;
-      const fsx = (first.x - cam.scrollX) * zoom;
-      const fsy = (first.y - cam.scrollY) * zoom;
-      this.hudGfx.trajectoryGfx.moveTo(fsx, fsy);
+    const totalSteps = TRAJECTORY_STEP_COUNT;
+    const dt = TRAJECTORY_STEP_SIZE;
 
-      for (let i = 1; i < segment.points.length; i++) {
-        const pt = segment.points[i];
-        if (!pt) continue;
-        const sx = (pt.x - cam.scrollX) * zoom;
-        const sy = (pt.y - cam.scrollY) * zoom;
-        this.hudGfx.trajectoryGfx.lineTo(sx, sy);
-      }
+    // First point — convert to screen
+    let prevSx = (px + bodyX - cam.scrollX) * zoom;
+    let prevSy = (py + bodyY - cam.scrollY) * zoom;
 
-      this.hudGfx.trajectoryGfx.strokePath();
+    for (let i = 0; i < totalSteps; i++) {
+      // Gravity at current position (body at origin)
+      const r2 = px * px + py * py;
+      const r = Math.sqrt(r2);
+      if (r < this.soiBody.radius * 0.5) break; // hit the body
+      const r3 = r2 * r;
+      const ax1 = -mu * px / r3;
+      const ay1 = -mu * py / r3;
+
+      // Velocity-Verlet: new position
+      const nx = px + vx * dt + 0.5 * ax1 * dt * dt;
+      const ny = py + vy * dt + 0.5 * ay1 * dt * dt;
+
+      // Gravity at new position
+      const nr2 = nx * nx + ny * ny;
+      const nr = Math.sqrt(nr2);
+      const nr3 = nr2 * nr;
+      const ax2 = -mu * nx / nr3;
+      const ay2 = -mu * ny / nr3;
+
+      // New velocity
+      vx += 0.5 * (ax1 + ax2) * dt;
+      vy += 0.5 * (ay1 + ay2) * dt;
+
+      px = nx;
+      py = ny;
+
+      // Convert to screen
+      const sx = (px + bodyX - cam.scrollX) * zoom;
+      const sy = (py + bodyY - cam.scrollY) * zoom;
+
+      // Draw this segment with fading alpha
+      const t = i / totalSteps;
+      const alpha = TRAJECTORY_ALPHA_START + (TRAJECTORY_ALPHA_END - TRAJECTORY_ALPHA_START) * t;
+      gfx.lineStyle(2, 0x4fc3f7, alpha);
+      gfx.beginPath();
+      gfx.moveTo(prevSx, prevSy);
+      gfx.lineTo(sx, sy);
+      gfx.strokePath();
+
+      prevSx = sx;
+      prevSy = sy;
     }
   }
 

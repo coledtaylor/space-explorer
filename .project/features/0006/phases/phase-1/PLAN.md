@@ -103,6 +103,8 @@ scaleConfig.ts exists with all scale constants. Star masses produce v_circ 50-20
 ### Task 2: Update generation and consumers to use new scale
 **Type:** auto
 **Sequence:** 2
+**Status:** Complete
+Completed: 2026-04-02
 
 <files>
 src/lib/celestial.ts
@@ -156,13 +158,13 @@ celestial.ts generates KSP-scale systems using scaleConfig constants. FlightScen
 
 ## Verification Checklist
 - [x] `src/lib/scaleConfig.ts` exists and exports all scale constants
-- [ ] Star radii in generated system are 5000-10000 gu
-- [ ] Planet radii are 500-2000 gu
-- [ ] Moon radii are 50-200 gu
-- [ ] Orbital distances span 50000-500000 gu
+- [x] Star radii in generated system are 5000-10000 gu
+- [x] Planet radii are 500-2000 gu
+- [x] Moon radii are 50-200 gu
+- [x] Orbital distances span 50000-500000 gu
 - [x] v_circ at typical planet orbit is 50-200 gu/s (check: `sqrt(starMass / orbitalRadius)`)
 - [x] Planet SOI radii are large enough to fly into (>5000 gu)
-- [ ] Ship starts in valid circular orbit (no NaN)
+- [x] Ship starts in valid circular orbit (no NaN)
 - [x] System transition radius is 1,000,000+ gu
 - [x] `npx tsc --noEmit` passes
 - [ ] Game loads in browser without console errors

@@ -46,7 +46,9 @@ export class Ship {
 
   constructor() {
     this.x = 0;
-    this.y = -300;
+    // Default y is overridden by FlightScene._initShipCircularOrbit at KSP scale.
+    // Set to -56000 (≈ Yellow Star radius × SHIP_START_ORBIT_FACTOR) for consistency.
+    this.y = -56000;
     this.vx = 0;
     this.vy = 0;
     this.angle = 0;
