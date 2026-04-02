@@ -138,3 +138,26 @@ export interface SOITransitionResult {
   // Relative velocity at the moment of SOI entry
   relativeVel: Vec2;
 }
+
+// ── Surface scene types ───────────────────────────────────────────────────────
+
+// Data returned by getScanData() — body-type-specific science interaction values
+export interface SurfaceInteractionData {
+  scanPoints: number;
+  scanText: string;
+  sampleText: string;
+}
+
+// Data passed to SurfaceScene via this.scene.start('SurfaceScene', data)
+export interface SurfaceSceneData {
+  ship: ShipState;
+  body: CelestialBody;
+  systemSeed: number;
+}
+
+// State returned to FlightScene after a surface launch
+export interface LaunchState {
+  position: Vec2;
+  velocity: Vec2;
+  fuelSpent: number;
+}

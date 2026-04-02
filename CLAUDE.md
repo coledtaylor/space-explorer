@@ -4,34 +4,53 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Space Explorer is a vanilla JavaScript browser game — no build tools, no bundler, no package manager. Open `index.html` directly in a browser to run.
+Space Explorer is a TypeScript browser game built with Phaser 4 and Vite. Run `npm run dev` to start the dev server.
 
 ## Architecture
 
-The game uses ES modules (`<script type="module">`) with a single HTML entry point and Canvas 2D rendering.
+The game uses Phaser 4 with TypeScript. Vite handles bundling and dev serving.
 
-**Module dependency graph:**
+**Module structure:**
 
 ```
-main.js  (game loop, UI wiring, state management)
-├── ship.js       Ship class — physics (thrust/drag/fuel), trail, drawing
-├── input.js      Input class — keyboard (WASD/arrows/E/M) + mouse tracking
-├── starfield.js  Starfield class — 3-layer parallax background with twinkling
-├── celestial.js  generateSystem(seed) → bodies[], updateOrbits() — procedural star system generation
-├── renderer.js   drawBody(), drawMinimap(), setCameraHack() — all canvas rendering for celestial bodies
-└── utils.js      Pure math helpers: lerp, dist, clamp, seededRandom, hslToRgb
+src/
+├── main.ts                 Game config, Phaser bootstrap, start button wiring
+├── scenes/
+│   ├── BootScene.ts        Asset loading and initial setup
+│   ├── FlightScene.ts      Main flight gameplay with HUD rendering
+│   ├── MapScene.ts         Orbital map view with maneuver nodes
+│   ├── LandingScene.ts     Landing sequence
+│   └── SurfaceScene.ts     Surface exploration
+├── objects/
+│   ├── Ship.ts             Ship physics and Phaser graphics rendering
+│   └── CelestialBody.ts    Celestial body rendering in Phaser
+├── lib/
+│   ├── celestial.ts        Procedural star system generation (seeded RNG)
+│   ├── orbit.ts            Orbital mechanics calculations
+│   ├── physics.ts          Ship physics and SOI transitions
+│   ├── trajectory.ts       Trajectory propagation
+│   ├── maneuver.ts         Maneuver node handling
+│   ├── landing.ts          Landing mechanics
+│   ├── surface.ts          Surface interaction
+│   ├── timewarp.ts         Time warp controls
+│   ├── units.ts            Unit constants
+│   └── utils.ts            Vector math, HSL conversion
+└── types/
+    └── index.ts            Shared type definitions
 ```
 
 **Key patterns:**
-- `main.js` owns the game loop (`requestAnimationFrame`), camera, and all DOM/UI interaction. Other modules are stateless or self-contained classes.
-- Celestial bodies are plain objects with a `kind` field (`'star'`, `'planet'`, `'anomaly'`) — no class hierarchy.
-- Procedural generation uses a deterministic seeded RNG (`seededRandom` in `utils.js`). Incrementing `currentSystemSeed` triggers a new system.
-- `renderer.js` uses a module-level camera hack (`setCameraHack`) to avoid threading the camera through every draw function — noted as technical debt.
-- System transition happens when the ship moves >2000 units from origin, resetting position and generating a new system.
+- Phaser scenes manage game state and rendering. DOM overlay (`#ui-overlay` in index.html) provides HUD panels styled via CSS.
+- `lib/` modules are pure logic with no Phaser dependency — testable independently.
+- `objects/` contains Phaser game objects that combine rendering with domain logic.
+- Celestial bodies use TypeScript discriminated unions (`kind` field) defined in `types/index.ts`.
+- Procedural generation uses a deterministic seeded RNG in `lib/utils.ts`.
 
 ## Development
 
-No build, lint, or test commands — static files only. Use any local HTTP server for development (e.g., `npx serve`, `python -m http.server`, or VS Code Live Server) since ES modules require serving over HTTP.
+- `npm install` — install dependencies
+- `npm run dev` — start Vite dev server
+- `npm run build` — production build to `dist/`
 
 ## Code Quality Standards (HIGHEST PRIORITY)
 

@@ -47,11 +47,8 @@ const HUD_COLOR_FUEL_FULL = 0x40c860;
 const HUD_COLOR_FUEL_LOW = 0xff6040;
 const HUD_COLOR_FUEL_BG = 0x1a2a3a;
 
-// Trajectory rendering — at KSP scale, step size and count are increased to cover
-// meaningful distances (10 gu/step × 1000 steps = 10000 gu of prediction, enough
-// to show at least one partial orbit at typical planet orbital speeds).
-const TRAJECTORY_STEP_SIZE = 10.0;
-const TRAJECTORY_STEP_COUNT = 1000;
+// Trajectory rendering
+const TRAJECTORY_MAX_STEPS = 800;
 const TRAJECTORY_ALPHA_START = 0.7;
 const TRAJECTORY_ALPHA_END = 0.15;
 
@@ -112,6 +109,7 @@ export class FlightScene extends Phaser.Scene {
 
   private hud!: HudTextObjects;
   private hudGfx!: HudGraphics;
+  private _hudCam!: Phaser.Cameras.Scene2D.Camera;
 
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasdKeys!: {
@@ -205,9 +203,11 @@ export class FlightScene extends Phaser.Scene {
       this._manualZoomUntil = this.time.now + ZOOM_CONFIG.MANUAL_OVERRIDE_TIMEOUT_MS;
     });
 
-    // Set initial zoom based on starting altitude so the view is immediately meaningful
+    // Compute initial altitude directly from position (orbit.altitude isn't populated
+    // until the first ship.update call, which hasn't happened yet in create())
+    const initialAltitude = Math.sqrt(this.ship.x * this.ship.x + this.ship.y * this.ship.y) - this.soiBody.radius;
     const initialZoom = computeTargetZoom(
-      this.ship.orbit.altitude,
+      initialAltitude,
       this.soiBody.radius,
       this.scale.height,
     );
@@ -344,17 +344,31 @@ export class FlightScene extends Phaser.Scene {
   private _initShipCircularOrbit(): void {
     this.ship = new Ship();
 
-    // Place ship in circular orbit at star.radius * SHIP_START_ORBIT_FACTOR from star center.
-    // For a Yellow Star (radius=7000), factor=8 gives orbitRadius=56000 gu, well within
-    // the innermost planet band and producing v_circ ≈ 103 gu/s.
-    const orbitRadius = this.system.star.radius * SHIP_START_ORBIT_FACTOR;
-    const circularSpeed = Math.sqrt(this.system.star.mu / orbitRadius);
+    // Start the ship in low orbit around the first planet (not the star).
+    // This gives the player an immediate KSP-like experience: a large planet
+    // fills the screen, and they can see their orbit and trajectory.
+    const planet = this.system.planets[0];
+    if (planet) {
+      this.soiBody = planet;
+      // Low orbit: 1.5× the planet radius from center
+      const orbitRadius = planet.radius * 1.5;
+      const circularSpeed = Math.sqrt(planet.mu / orbitRadius);
 
-    this.ship.x = 0;
-    this.ship.y = -orbitRadius;
-    // Tangential velocity for clockwise orbit: vx = circularSpeed, vy = 0
-    this.ship.vx = circularSpeed;
-    this.ship.vy = 0;
+      // Position relative to planet (SOI-relative frame)
+      this.ship.x = 0;
+      this.ship.y = -orbitRadius;
+      this.ship.vx = circularSpeed;
+      this.ship.vy = 0;
+    } else {
+      // Fallback: orbit the star if somehow no planets exist
+      this.soiBody = this.system.star;
+      const orbitRadius = this.system.star.radius * SHIP_START_ORBIT_FACTOR;
+      const circularSpeed = Math.sqrt(this.system.star.mu / orbitRadius);
+      this.ship.x = 0;
+      this.ship.y = -orbitRadius;
+      this.ship.vx = circularSpeed;
+      this.ship.vy = 0;
+    }
     this.ship.angle = 0;
   }
 
@@ -393,8 +407,18 @@ export class FlightScene extends Phaser.Scene {
 
   private _initHud(): void {
     const { width, height } = this.scale;
-    const x = HUD_MARGIN;
-    let y = height - HUD_MARGIN - HUD_LINE_HEIGHT * 5 - HUD_FUEL_BAR_HEIGHT - 8;
+
+    // --- HUD camera ---
+    // Create a second camera that renders ONLY HUD objects at fixed zoom=1.
+    // This keeps HUD pixel-perfect regardless of the main camera's zoom/scroll.
+    const hudCam = this.cameras.add(0, 0, width, height);
+    hudCam.setScroll(0, 0);
+    hudCam.setZoom(1);
+
+    // Main camera should ignore HUD objects; HUD camera should ignore game objects.
+    // We use a unique property to tag HUD objects, then set camera filters.
+    // Phaser approach: put HUD objects in a container or use cameraFilter bitmask.
+    // Simplest: give all HUD objects the same depth layer and use ignore().
 
     const style: Phaser.Types.GameObjects.Text.TextStyle = {
       fontFamily: HUD_FONT_FAMILY,
@@ -408,45 +432,55 @@ export class FlightScene extends Phaser.Scene {
       color: HUD_COLOR_MUTED,
     };
 
-    // SOI body name label (top line)
-    const soiLabel = this.add.text(x, y, 'SOI: —', style).setScrollFactor(0).setDepth(10);
+    // Bottom-left info block
+    const x = HUD_MARGIN;
+    let y = height - HUD_MARGIN - HUD_LINE_HEIGHT * 5 - HUD_FUEL_BAR_HEIGHT - 8;
+
+    const soiLabel = this.add.text(x, y, 'SOI: —', style).setDepth(100);
+    y += HUD_LINE_HEIGHT;
+    const velocityLabel = this.add.text(x, y, 'VEL: 0.0 u/s', style).setDepth(100);
+    y += HUD_LINE_HEIGHT;
+    const altitudeLabel = this.add.text(x, y, 'ALT: 0.0 u', style).setDepth(100);
+    y += HUD_LINE_HEIGHT;
+    const fuelLabel = this.add.text(x, y, 'FUEL', mutedStyle).setDepth(100);
     y += HUD_LINE_HEIGHT;
 
-    const velocityLabel = this.add.text(x, y, 'VEL: 0.0 u/s', style).setScrollFactor(0).setDepth(10);
-    y += HUD_LINE_HEIGHT;
-
-    const altitudeLabel = this.add.text(x, y, 'ALT: 0.0 u', style).setScrollFactor(0).setDepth(10);
-    y += HUD_LINE_HEIGHT;
-
-    const fuelLabel = this.add.text(x, y, 'FUEL', mutedStyle).setScrollFactor(0).setDepth(10);
-    y += HUD_LINE_HEIGHT;
-
-    // Fuel bar background
-    const fuelBarBg = this.add.graphics().setScrollFactor(0).setDepth(10);
+    const fuelBarBg = this.add.graphics().setDepth(100);
     fuelBarBg.fillStyle(HUD_COLOR_FUEL_BG, 0.8);
     fuelBarBg.fillRect(x, y, HUD_FUEL_BAR_WIDTH, HUD_FUEL_BAR_HEIGHT);
 
-    // Fuel bar fill (redrawn each frame)
-    const fuelBar = this.add.graphics().setScrollFactor(0).setDepth(10);
+    const fuelBar = this.add.graphics().setDepth(100);
 
     y += HUD_FUEL_BAR_HEIGHT + 4;
-    const systemLabel = this.add.text(x, y, `SEED: ${this.currentSeed}`, mutedStyle).setScrollFactor(0).setDepth(10);
+    const systemLabel = this.add.text(x, y, `SEED: ${this.currentSeed}`, mutedStyle).setDepth(100);
 
-    // Warp rate indicator — top-right corner
+    // Top-right warp indicator
     const warpLabel = this.add
       .text(width - HUD_MARGIN, HUD_MARGIN, 'WARP: 1x', {
         fontFamily: HUD_FONT_FAMILY,
         fontSize: HUD_FONT_SIZE,
         color: HUD_COLOR_MUTED,
       })
-      .setScrollFactor(0)
-      .setDepth(10)
-      .setOrigin(1, 0); // right-align
+      .setDepth(100)
+      .setOrigin(1, 0);
+
+    // Tell the main camera to ignore all HUD objects
+    const hudObjects = [soiLabel, velocityLabel, altitudeLabel, fuelLabel, systemLabel, warpLabel, fuelBarBg, fuelBar];
+    for (const obj of hudObjects) {
+      this.cameras.main.ignore(obj);
+    }
+    // Tell the HUD camera to ignore everything EXCEPT HUD objects — we do this
+    // by ignoring the Graphics layers used for game rendering and body labels.
+    // We'll also call hudCam.ignore() on body labels each frame.
+    hudCam.ignore([this.worldGfx, this.shipGfx, this.starfieldGfx]);
+    this._hudCam = hudCam;
 
     this.hud = { soiLabel, velocityLabel, altitudeLabel, fuelLabel, systemLabel, warpLabel };
 
-    // Trajectory graphics object (screen-space, depth between world and ship)
+    // Trajectory graphics object (game layer, not HUD)
     const trajectoryGfx = this.add.graphics().setScrollFactor(0).setDepth(1);
+    // Main camera sees trajectory; HUD camera ignores it
+    hudCam.ignore(trajectoryGfx);
 
     this.hudGfx = { fuelBarBg, fuelBar, trajectoryGfx };
   }
@@ -715,6 +749,8 @@ export class FlightScene extends Phaser.Scene {
       if (child instanceof Phaser.GameObjects.Text) {
         child.setScrollFactor(0);
         this.bodyLabels.push(child);
+        // HUD camera must not render game-world labels
+        this._hudCam.ignore(child);
       }
     }
   }
@@ -744,8 +780,16 @@ export class FlightScene extends Phaser.Scene {
     const bodyX = this.soiBody.x;
     const bodyY = this.soiBody.y;
 
-    const totalSteps = TRAJECTORY_STEP_COUNT;
-    const dt = TRAJECTORY_STEP_SIZE;
+    // Cap prediction to ~1.5 orbital periods (if orbit is elliptical).
+    // For escape trajectories (no period), use a generous time budget.
+    const orbitalPeriod = this.ship.orbit.T;
+    const maxTime = orbitalPeriod != null && orbitalPeriod > 0
+      ? orbitalPeriod * 1.5
+      : 10000; // escape trajectory: 10000 seconds
+
+    // Adaptive step size: target ~400 steps for the prediction
+    const dt = Math.max(0.5, maxTime / 400);
+    const totalSteps = Math.min(TRAJECTORY_MAX_STEPS, Math.ceil(maxTime / dt));
 
     // First point — convert to screen
     let prevSx = (px + bodyX - cam.scrollX) * zoom;
