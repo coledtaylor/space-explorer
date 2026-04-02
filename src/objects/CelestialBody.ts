@@ -46,9 +46,16 @@ function lightenHslColor(cssColor: string, amount: number): number {
   return 0xffffff;
 }
 
+// Maximum screen-space radius for gradient circles. Drawing gradient circles
+// much larger than the visible screen wastes GPU fill rate with no visual benefit.
+// At 2000px, this comfortably covers a 1440p display diagonal (~2560px) with margin.
+const MAX_GRADIENT_RADIUS = 2000;
+
 // Draw a radial gradient approximation using concentric circles.
 // innerColor and outerColor are Phaser hex integers.
 // Draws `steps` concentric circles blending from inner to outer color/alpha.
+// outerRadius is clamped to MAX_GRADIENT_RADIUS to avoid massive off-screen geometry
+// when a body's screen-space radius exceeds the visible area.
 function drawRadialGradient(
   gfx: Phaser.GameObjects.Graphics,
   cx: number,
@@ -61,6 +68,12 @@ function drawRadialGradient(
   outerAlpha: number,
   steps: number,
 ): void {
+  // Clamp to avoid drawing massive off-screen geometry when zoomed in on large bodies
+  const clampedOuter = Math.min(outerRadius, MAX_GRADIENT_RADIUS);
+  // If the entire gradient is beyond the cap, skip drawing entirely
+  if (innerRadius >= clampedOuter) return;
+  outerRadius = clampedOuter;
+
   for (let i = steps; i >= 0; i--) {
     const t = i / steps;
     const r = innerRadius + (outerRadius - innerRadius) * t;
@@ -144,7 +157,10 @@ export class CelestialBodyRenderer {
     zoom: number,
   ): void {
     const r = body.radius * zoom;
-    const glowSize = r * 3 + Math.sin(time * 0.5) * 5 * zoom;
+    // Cap glow at MAX_GRADIENT_RADIUS so a screen-filling star doesn't draw a
+    // 3× screen-size gradient. The animated pulse adds at most a few pixels.
+    const rawGlowSize = r * 3 + Math.sin(time * 0.5) * 5 * zoom;
+    const glowSize = Math.min(rawGlowSize, MAX_GRADIENT_RADIUS);
 
     // Outer glow — radial gradient from glowColor at inner edge to transparent
     const glowColor = parseCssHsl(body.color);
