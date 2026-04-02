@@ -156,6 +156,8 @@ Port `js/physics.js` to `src/lib/physics.ts`:
 ### Task 3: Port System Generation and Trajectory Propagation
 **Type:** auto
 **Sequence:** 3
+**Status:** complete
+**Completed:** 2026-04-02
 
 <files>
 src/lib/celestial.ts

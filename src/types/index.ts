@@ -101,11 +101,21 @@ export interface TrajectoryPoint {
   t: number;
 }
 
+// A marker along a trajectory (SOI transitions, closest approaches, etc.)
+export interface TrajectoryMarker {
+  type: 'soi-entry' | 'soi-exit' | 'closest-approach';
+  x: number;
+  y: number;
+  body?: string;
+  distance?: number;
+}
+
 // A contiguous segment of trajectory within a single SOI
 export interface TrajectorySegment {
-  points: TrajectoryPoint[];
+  points: Vec2[];
   soiBody: MassiveBody;
   color: string;
+  markers: TrajectoryMarker[];
   // Apoapsis and periapsis markers if orbit is elliptical
   apoapsis?: Vec2;
   periapsis?: Vec2;
