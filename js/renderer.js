@@ -461,6 +461,37 @@ export function drawMinimap(minimapCtx, ship, bodies, camera) {
   const cx = w / 2;
   const cy = h / 2;
 
+  // Find the star to use as center for planet orbit rings
+  const star = bodies.find(b => b.kind === 'star');
+  const starMx = star ? cx + (star.x - camera.x) * scale : cx;
+  const starMy = star ? cy + (star.y - camera.y) * scale : cy;
+
+  // Draw planet orbit rings around the star (before dots so dots render on top)
+  minimapCtx.lineWidth = 1;
+  for (const body of bodies) {
+    if (body.kind !== 'planet') continue;
+    if (!body.orbitalElements) continue;
+    const orbitR = body.orbitalElements.a * scale;
+    minimapCtx.beginPath();
+    minimapCtx.arc(starMx, starMy, orbitR, 0, Math.PI * 2);
+    minimapCtx.strokeStyle = 'rgba(100, 140, 180, 0.15)';
+    minimapCtx.stroke();
+  }
+
+  // Draw moon orbit rings around their parent planets
+  for (const body of bodies) {
+    if (body.kind !== 'moon') continue;
+    if (!body.orbitalElements || !body.parentBody) continue;
+    const parent = body.parentBody;
+    const parentMx = cx + (parent.x - camera.x) * scale;
+    const parentMy = cy + (parent.y - camera.y) * scale;
+    const orbitR = body.orbitalElements.a * scale;
+    minimapCtx.beginPath();
+    minimapCtx.arc(parentMx, parentMy, orbitR, 0, Math.PI * 2);
+    minimapCtx.strokeStyle = 'rgba(100, 140, 180, 0.08)';
+    minimapCtx.stroke();
+  }
+
   for (const body of bodies) {
     const bx = cx + (body.x - camera.x) * scale;
     const by = cy + (body.y - camera.y) * scale;
