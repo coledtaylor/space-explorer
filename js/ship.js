@@ -14,6 +14,7 @@ export class Ship {
     this.fuel = 1000;
     this.thrustActive = false;
     this.currentSOIBody = null;
+    this.activeManeuver = null;
     this.orbit = { a: 0, e: 0, omega: 0, nu: 0, T: 0, apoapsis: 0, periapsis: 0, altitude: 0 };
   }
 
