@@ -52,9 +52,6 @@ export function shipWorldPosition(ship, system) {
 // Detect and perform SOI transitions; mutates ship state if transition occurs
 // Returns { transitioned, from, to } or null if no transition
 export function checkSOITransition(ship, system) {
-  // Guard: skip SOI check while ship is stationary on a surface
-  if (ship.landed) return null;
-
   const current = ship.currentSOIBody;
 
   // Guard: if no SOI body assigned, default to star

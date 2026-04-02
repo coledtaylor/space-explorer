@@ -81,9 +81,6 @@ The landing state machine from Phase 1 likely has states like `inactive`, `appro
 Launch mechanics exist: landed state can transition to ascending via thrust input, fuel cost scales with surface gravity, ship physics freeze while landed and resume on launch, ascending state returns to inactive above approach altitude.
 </done>
 
-**Status:** Complete
-**Completed:** 2026-04-02
-
 ### Task 2: Wire launch into game loop — panel dismissal, HUD, SOI guard
 **Type:** auto
 **Sequence:** 2
@@ -119,9 +116,6 @@ Wire the launch sequence into the game loop and ensure all UI and physics system
 <done>
 Launch is fully integrated: W key triggers liftoff from landed state, surface panel hides on launch, landing HUD shows during ascent and hides above approach altitude, SOI checks are suppressed while landed and resume on launch, camera zooms out during ascent, player has full flight controls after liftoff, high-gravity bodies cost more fuel than low-gravity ones.
 </done>
-
-**Status:** Complete
-**Completed:** 2026-04-02
 
 ## Verification Checklist
 - [ ] Pressing W while landed initiates liftoff and ship begins moving away from surface

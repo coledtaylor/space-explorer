@@ -127,18 +127,16 @@ Surface panel shows/hides in sync with landed state. Science counter updates in 
 </done>
 
 ## Verification Checklist
-- [x] `js/surface.js` exports `showSurfacePanel`, `hideSurfacePanel`, `getScience`, `isScanned`
-- [x] `index.html` has `#surface-panel` with scan/sample buttons and `#science-display` in HUD
-- [x] `css/style.css` styles the surface panel and science counter
-- [x] `js/main.js` imports surface module and wires show/hide to landed state transitions
-- [x] First scan of a body awards science points and shows discovery text
-- [x] Second scan of same body shows "Already Scanned", no points
-- [x] At least 6 subtypes have distinct scan/sample text (Rocky, Ice World, Volcanic, Ocean World, Lush, Desert)
-- [x] Science counter visible in HUD and accumulates across landings
-- [x] Surface panel hides on launch and during map mode
-- [x] No console.log statements, follows project conventions (2-space indent, single quotes, semicolons)
-
-Completed: 2026-04-02
+- [ ] `js/surface.js` exports `showSurfacePanel`, `hideSurfacePanel`, `getScience`, `isScanned`
+- [ ] `index.html` has `#surface-panel` with scan/sample buttons and `#science-display` in HUD
+- [ ] `css/style.css` styles the surface panel and science counter
+- [ ] `js/main.js` imports surface module and wires show/hide to landed state transitions
+- [ ] First scan of a body awards science points and shows discovery text
+- [ ] Second scan of same body shows "Already Scanned", no points
+- [ ] At least 6 subtypes have distinct scan/sample text (Rocky, Ice World, Volcanic, Ocean World, Lush, Desert)
+- [ ] Science counter visible in HUD and accumulates across landings
+- [ ] Surface panel hides on launch and during map mode
+- [ ] No console.log statements, follows project conventions (2-space indent, single quotes, semicolons)
 
 ## Success Criteria
 The surface interaction panel appears after landing, provides meaningful scan/sample interactions with body-type-specific flavor, tracks scanned bodies to prevent duplicate science awards, and displays a persistent science counter in the main HUD. All code follows existing project conventions.
