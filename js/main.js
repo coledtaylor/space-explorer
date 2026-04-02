@@ -2,10 +2,10 @@ import { Ship } from './ship.js';
 import { Input } from './input.js';
 import { Starfield } from './starfield.js';
 import { generateSystem, updateBodyPositions } from './celestial.js';
-import { drawBody, drawMinimap, setCameraHack, drawOrbitPath, drawBodyOrbits, drawTrajectory, drawManeuverNode, drawPostBurnTrajectory } from './renderer.js';
+import { drawBody, drawMinimap, setCameraHack, drawOrbitPath, drawBodyOrbits, drawTrajectory, drawManeuverNode, drawPostBurnTrajectory, drawSurfaceHorizon, drawCrashEffect } from './renderer.js';
 import { propagateTrajectory } from './trajectory.js';
 import { checkSOITransition, shipWorldPosition } from './physics.js';
-import { dist } from './utils.js';
+import { dist, lerp } from './utils.js';
 import { MapMode } from './mapmode.js';
 import { getWarpRate, increaseWarp, decreaseWarp, resetWarp } from './timewarp.js';
 import { updateLanding, getLandingState, resetLanding } from './landing.js';
@@ -79,6 +79,14 @@ let running = false;
 let time = 0;
 let prevMapState = false;
 let burnGuidance = null;
+
+// Landing zoom state
+let landingZoom = 1.0;
+const LANDING_ZOOM_MAX = 10;
+const LANDING_APPROACH_FACTOR = 3; // mirrors landing.js APPROACH_FACTOR
+
+// Crash effect state
+let crashEffect = null;
 
 // Maneuver node drag state
 let activeManeuverHandle = null;
@@ -201,9 +209,24 @@ function update(dt) {
   // Recompute world position after possible transition
   const wp = shipWorldPosition(ship, system);
 
+  // Landing zoom — compute target zoom from altitude, lerp toward it each frame
+  const ls0 = getLandingState();
+  let targetLandingZoom = 1.0;
+  if (!mapMode.isActive() && ls0.body && (ls0.state === 'approach' || ls0.state === 'landed')) {
+    const approachThreshold = ls0.body.radius * LANDING_APPROACH_FACTOR;
+    const altitude = Math.max(0, ls0.altitude);
+    // Inverse-altitude curve: zooms in sharply as altitude approaches 0
+    const t = 1 - Math.min(1, altitude / approachThreshold);
+    // Exponential curve: t^2 gives more zoom near surface, less during early approach
+    targetLandingZoom = 1.0 + (LANDING_ZOOM_MAX - 1.0) * (t * t);
+  }
+  landingZoom = lerp(landingZoom, targetLandingZoom, 0.04);
+
+  // Tighten camera lerp when zoomed in during landing so ship stays centered
+  const cameraLerp = landingZoom > 2 ? 0.25 : 0.08;
   // Camera follows ship world-space position smoothly
-  camera.x += (wp.x - camera.x) * 0.08;
-  camera.y += (wp.y - camera.y) * 0.08;
+  camera.x += (wp.x - camera.x) * cameraLerp;
+  camera.y += (wp.y - camera.y) * cameraLerp;
 
   // Point ship at mouse only in flight mode — skip in map mode to avoid spinning
   if (!mapMode.isActive()) {
@@ -336,6 +359,29 @@ function update(dt) {
     landingStatus.textContent = 'LANDED';
     landingStatus.className = 'status-landed';
   } else if (ls.state === 'crashed') {
+    // Start crash effect at the ship's world position before respawn
+    if (!crashEffect) {
+      const crashWx = wp.x;
+      const crashWy = wp.y;
+      const CRASH_DURATION = 1.0;
+      const particles = [];
+      const PARTICLE_COUNT = 24;
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        const angle = (i / PARTICLE_COUNT) * Math.PI * 2 + Math.random() * 0.5;
+        const speed = 8 + Math.random() * 18;
+        particles.push({
+          x: crashWx,
+          y: crashWy,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          radius: 3 + Math.random() * 5,
+          life: 1.0,
+          maxLife: 1.0,
+        });
+      }
+      crashEffect = { active: true, timer: CRASH_DURATION, duration: CRASH_DURATION, x: crashWx, y: crashWy, particles };
+    }
+
     // Respawn in circular orbit around the crashed body
     const body = ls.body;
     if (body) {
@@ -391,6 +437,20 @@ function update(dt) {
   } else {
     // inactive
     landingHud.classList.add('hidden');
+  }
+
+  // Tick crash effect particles
+  if (crashEffect && crashEffect.active) {
+    crashEffect.timer -= dt;
+    if (crashEffect.timer <= 0) {
+      crashEffect = null;
+    } else {
+      for (const p of crashEffect.particles) {
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.life = crashEffect.timer / crashEffect.duration;
+      }
+    }
   }
 
   // Find nearest body for scan interaction (use world-space distances)
@@ -559,6 +619,8 @@ function update(dt) {
     camera.y = ship.y;
     scanPanel.classList.add('hidden');
     resetLanding();
+    crashEffect = null;
+    landingZoom = 1.0;
   }
 }
 
@@ -622,10 +684,24 @@ function render() {
   starfield.draw(ctx, camera, time);
 
   // Determine effective camera and zoom from map mode
-  const zoom = mapMode.getZoom();
+  const mapZoom = mapMode.getZoom();
   const mapCam = mapMode.getCamera();
   const usingMapCam = mapMode.isActive();
-  const effectiveCam = usingMapCam ? mapCam : camera;
+
+  // Apply landing zoom when in flight mode; map mode has its own zoom
+  const zoom = usingMapCam ? mapZoom : landingZoom;
+
+  // Screen shake during crash effect — offset camera by decreasing random amount
+  let shakeX = 0, shakeY = 0;
+  if (crashEffect && crashEffect.active) {
+    const shakeIntensity = (crashEffect.timer / crashEffect.duration) * 6;
+    shakeX = (Math.random() * 2 - 1) * shakeIntensity;
+    shakeY = (Math.random() * 2 - 1) * shakeIntensity;
+  }
+
+  const effectiveCam = usingMapCam
+    ? mapCam
+    : { x: camera.x + shakeX, y: camera.y + shakeY };
 
   setCameraHack(effectiveCam.x, effectiveCam.y);
 
@@ -651,6 +727,14 @@ function render() {
     { maxTime: 600, stepSize: 0.25, maxSegments: 3, simBaseTime: time }
   );
   drawTrajectory(ctx, effectiveCam, trajectorySegments, zoom);
+
+  // Surface horizon — draw when close to a body (zoom > 3) in flight mode
+  if (!usingMapCam && zoom > 3) {
+    const lsRender = getLandingState();
+    if (lsRender.body) {
+      drawSurfaceHorizon(ctx, lsRender.body, effectiveCam, zoom);
+    }
+  }
 
   // Draw ship at world-space screen position
   const wp = shipWorldPosition(ship, system);
@@ -710,6 +794,11 @@ function render() {
     ctx.arc(shipSx, shipSy, 3, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(255, 220, 80, 0.95)';
     ctx.fill();
+  }
+
+  // Crash effect particles — drawn in world space over everything
+  if (crashEffect && crashEffect.active) {
+    drawCrashEffect(ctx, effectiveCam, zoom, crashEffect);
   }
 
   // Minimap — draws in its own canvas, not affected by the main canvas transform

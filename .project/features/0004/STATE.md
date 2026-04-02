@@ -6,18 +6,33 @@
 
 | Field | Value |
 |-------|-------|
-| **Phase** | Not Started |
-| **Status** | Draft |
+| **Phase** | Phase 2 |
+| **Status** | Complete |
+| **Last Completed** | Phase 2 |
 | **Blocker** | None |
 
 ## Phase Progress
 
 | Phase | Status | Started | Completed |
 |-------|--------|---------|-----------|
-| Phase 1: Landing Detection and Approach HUD | ⬜ Pending | — | — |
-| Phase 2: Landing Camera and Surface Rendering | ⬜ Pending | — | — |
+| Phase 1: Landing Detection and Approach HUD | ✅ Complete | 2026-04-02 | 2026-04-02 |
+| Phase 2: Landing Camera and Surface Rendering | ✅ Complete | 2026-04-02 | 2026-04-02 |
 | Phase 3: Surface Interaction Panel | ⬜ Pending | — | — |
 | Phase 4: Launch from Surface | ⬜ Pending | — | — |
+
+## Task Progress (Phase 1)
+
+| Task | Status | Sequence | Started | Duration |
+|------|--------|----------|---------|----------|
+| Task 1: Create landing module and ship landed state | ✅ Done | 1 | 2026-04-02 | ~90s |
+| Task 2: Wire landing into game loop, add HUD markup | ✅ Done | 2 | 2026-04-02 | ~134s |
+
+## Task Progress (Phase 2)
+
+| Task | Status | Sequence | Started | Duration |
+|------|--------|----------|---------|----------|
+| Task 1: Altitude-Driven Camera Zoom + Surface Horizon | ✅ Done | 1 | 2026-04-02 | ~20min |
+| Task 2: Landed Ship Rendering + Crash Effects | ✅ Done | 2 | 2026-04-02 | ~20min |
 
 ## Decisions Log
 

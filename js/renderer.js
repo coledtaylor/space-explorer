@@ -694,6 +694,112 @@ export function drawPostBurnTrajectory(ctx, camera, segments, zoom) {
   }
 }
 
+// Surface color by subtype — used for horizon and ground fill
+function surfaceColorForSubtype(subtype, hue) {
+  if (subtype === 'Rocky')      return { r: 110, g: 95,  b: 75  };
+  if (subtype === 'Ice World')  return { r: 200, g: 225, b: 255 };
+  if (subtype === 'Volcanic')   return { r: 100, g: 25,  b: 15  };
+  if (subtype === 'Ocean World') return { r: 20,  g: 60,  b: 160 };
+  if (subtype === 'Lush')       return { r: 40,  g: 120, b: 40  };
+  if (subtype === 'Desert')     return { r: 180, g: 140, b: 70  };
+  if (subtype === 'Gas Giant')  return { r: 160, g: 120, b: 60  };
+  // Fallback — derive from hue
+  const h = (hue || 0) / 360;
+  const r = Math.round(120 + Math.cos(h * Math.PI * 2) * 60);
+  const g = Math.round(100 + Math.sin(h * Math.PI * 2) * 40);
+  const b = Math.round(80);
+  return { r, g, b };
+}
+
+// Draw the surface/horizon fill when zoomed close to a body
+// ctx        — canvas context
+// body       — celestial body object (planet or moon)
+// camera     — effective camera {x, y}
+// zoom       — current zoom factor
+// Only renders when zoom > 3
+export function drawSurfaceHorizon(ctx, body, camera, zoom) {
+  if (!body || zoom <= 3) return;
+  zoom = zoom || 1;
+
+  // Screen-space center of the body
+  const sx = (body.x - camera.x) * zoom + ctx.canvas.width / 2;
+  const sy = (body.y - camera.y) * zoom + ctx.canvas.height / 2;
+  const sr = body.radius * zoom;
+
+  // Only draw if the body is large enough to have a visible horizon
+  if (sr < 20) return;
+
+  const col = surfaceColorForSubtype(body.subtype, body.hue);
+  const topY = sy - sr; // topmost point of body circle = horizon line y
+
+  // Draw the ground fill below the horizon arc
+  // Clip to lower half of canvas so we don't paint over space above horizon
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, topY, ctx.canvas.width, ctx.canvas.height - topY);
+  ctx.clip();
+
+  // Fill below the arc with a gradient from surface color to dark
+  const grad = ctx.createLinearGradient(sx, topY, sx, topY + sr * 0.6);
+  grad.addColorStop(0, `rgba(${col.r},${col.g},${col.b},0.85)`);
+  grad.addColorStop(0.5, `rgba(${Math.round(col.r * 0.6)},${Math.round(col.g * 0.6)},${Math.round(col.b * 0.6)},0.9)`);
+  grad.addColorStop(1, `rgba(5,5,15,0.95)`);
+
+  ctx.beginPath();
+  ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  ctx.restore();
+
+  // Draw horizon line — bright rim at the top arc
+  const rimAlpha = Math.min(1, (zoom - 3) / 5);
+  ctx.save();
+  ctx.beginPath();
+  // Arc across the top portion of the circle (visible horizon)
+  ctx.arc(sx, sy, sr, -Math.PI * 0.7, -Math.PI * 0.3);
+  ctx.strokeStyle = `rgba(${Math.min(255, col.r + 60)},${Math.min(255, col.g + 60)},${Math.min(255, col.b + 60)},${rimAlpha})`;
+  ctx.lineWidth = Math.max(1, 2 * zoom / 8);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Crash effect state — particles and screen-shake data
+// This is a transient render-only function; caller passes effect state each frame
+// effect: { active, timer, duration, x, y, particles: [{x,y,vx,vy,life,maxLife}] }
+// Returns nothing — purely draws to ctx
+export function drawCrashEffect(ctx, camera, zoom, effect) {
+  if (!effect || !effect.active) return;
+  zoom = zoom || 1;
+
+  const progress = effect.timer / effect.duration; // 1 at start, 0 at end
+  const alpha = progress;
+
+  for (const p of effect.particles) {
+    const pLife = p.life / p.maxLife;
+    const pAlpha = pLife * alpha;
+    if (pAlpha <= 0) continue;
+
+    const px = (p.x - camera.x) * zoom + ctx.canvas.width / 2;
+    const py = (p.y - camera.y) * zoom + ctx.canvas.height / 2;
+    const pr = Math.max(1, p.radius * pLife);
+
+    // Outer orange particle
+    ctx.beginPath();
+    ctx.arc(px, py, pr, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,${Math.round(100 + 100 * pLife)},0,${pAlpha})`;
+    ctx.fill();
+
+    // Inner bright core
+    if (pr > 2) {
+      ctx.beginPath();
+      ctx.arc(px, py, pr * 0.5, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,240,180,${pAlpha * 0.9})`;
+      ctx.fill();
+    }
+  }
+}
+
 export function drawMinimap(minimapCtx, ship, bodies, camera) {
   const w = minimapCtx.canvas.width;
   const h = minimapCtx.canvas.height;

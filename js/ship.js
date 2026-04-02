@@ -101,12 +101,35 @@ export class Ship {
     // Use world-space position if provided (needed when in planet SOI)
     const wx = worldPos ? worldPos.x : this.x;
     const wy = worldPos ? worldPos.y : this.y;
-    const sx = (wx - camera.x) * zoom + ctx.canvas.width / 2;
-    const sy = (wy - camera.y) * zoom + ctx.canvas.height / 2;
+
+    // When landed, lock angle to surface normal (nose away from body center)
+    // Ship position is SOI-relative, body at origin, so normal = atan2(y, x) + PI/2
+    // (ship triangle nose is at -14 in local Y, so +PI/2 rotates nose outward)
+    let drawAngle = this.angle;
+    let drawWx = wx;
+    let drawWy = wy;
+    if (this.landed) {
+      // Angle pointing radially outward from body center (nose points away from surface)
+      // Ship local coords: nose at y=-14, engine base at y=+10
+      // With this angle, -Y (nose) faces outward, +Y (engine) faces body surface
+      drawAngle = Math.atan2(this.y, this.x) - Math.PI / 2;
+      // Shift draw position outward so the engine base (+10 screen px) sits exactly on the surface
+      // offset = 10 screen pixels outward = 10/zoom world units
+      const dist2 = Math.sqrt(this.x * this.x + this.y * this.y);
+      if (dist2 > 0) {
+        const normalX = this.x / dist2;
+        const normalY = this.y / dist2;
+        drawWx = wx + normalX * 10 / zoom;
+        drawWy = wy + normalY * 10 / zoom;
+      }
+    }
+
+    const sx = (drawWx - camera.x) * zoom + ctx.canvas.width / 2;
+    const sy = (drawWy - camera.y) * zoom + ctx.canvas.height / 2;
 
     ctx.save();
     ctx.translate(sx, sy);
-    ctx.rotate(this.angle);
+    ctx.rotate(drawAngle);
 
     // Engine glow
     if (this.thrustActive && this.fuel > 0) {
