@@ -23,6 +23,20 @@ const ANOMALY_NAMES = [
 const PLANET_TYPES = ['Rocky', 'Gas Giant', 'Ice World', 'Ocean World', 'Desert', 'Volcanic', 'Lush'];
 const STAR_TYPES = ['Red Dwarf', 'Yellow Star', 'Blue Giant', 'White Dwarf', 'Neutron Star'];
 
+// Moon name suffixes (roman numerals)
+const MOON_SUFFIXES = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
+
+// Moon count ranges per planet subtype [min, max]
+const MOON_COUNTS = {
+  'Rocky': [0, 1],
+  'Gas Giant': [2, 8],
+  'Ice World': [0, 2],
+  'Ocean World': [0, 2],
+  'Desert': [0, 2],
+  'Volcanic': [0, 1],
+  'Lush': [0, 3],
+};
+
 // Game-scale masses (tuned for playable orbital mechanics)
 // With G=1, star.mu = star.mass, so circular velocity at r is sqrt(mass/r)
 // Yellow Star mass=50000 at r=400 gives v=sqrt(125)≈11 gu/s, T≈228s (~4min)
@@ -45,6 +59,10 @@ const PLANET_MASSES = {
   'Volcanic': 550,
   'Lush': 800,
 };
+
+// Moon mass as a fraction of parent planet mass (min 0.5%, max 5%)
+const MOON_MASS_MIN_FRAC = 0.005;
+const MOON_MASS_MAX_FRAC = 0.05;
 
 // Module-level elapsed time accumulator for orbit propagation
 let elapsedTime = 0;
@@ -108,7 +126,7 @@ export function generateSystem(seed) {
     // Compute initial position from orbital elements
     const { pos } = stateFromOrbitalElements(orbitalRadius, e, omega, nu0, star.mu);
 
-    planets.push({
+    const planet = {
       kind: 'planet',
       name: PLANET_NAMES[(seed * 7 + i * 13) % PLANET_NAMES.length],
       subtype: pType,
@@ -128,15 +146,88 @@ export function generateSystem(seed) {
         'Diameter': `${(pRadius * 400).toFixed(0)} km`,
         'Gravity': `${(0.2 + rng() * 2.5).toFixed(2)} g`,
         'Atmosphere': rng() > 0.3 ? 'Present' : 'None',
-        'Moons': `${Math.floor(rng() * 6)}`,
+        'Moons': '0',
       },
-    });
+      moons: [],
+      children: [],
+    };
+    planets.push(planet);
 
     // Titius-Bode-like spacing: multiply by 1.5-2.0 each step, plus a small random offset
     orbitalRadius *= 1.5 + rng() * 0.5;
   }
 
-  const bodies = [star, ...planets];
+  // Generate moons for each planet
+  const allMoons = [];
+  for (const planet of planets) {
+    const [minMoons, maxMoons] = MOON_COUNTS[planet.subtype] || [0, 0];
+    const moonCount = minMoons + Math.floor(rng() * (maxMoons - minMoons + 1));
+    const maxSoiRadius = planet.soiRadius * 0.8;
+
+    // Track outermost radius to avoid orbit overlaps
+    let nextMinRadius = planet.radius + 8;
+
+    for (let m = 0; m < moonCount; m++) {
+      const moonMassFrac = MOON_MASS_MIN_FRAC + rng() * (MOON_MASS_MAX_FRAC - MOON_MASS_MIN_FRAC);
+      const moonMass = planet.mass * moonMassFrac;
+      const moonMu = G * moonMass;
+      const moonRadius = 3 + rng() * 5;
+
+      // Orbital radius: start after gap, space each moon with a gap between them
+      const gap = moonRadius + 5;
+      const moonOrbitalRadius = nextMinRadius + gap + rng() * gap;
+
+      // Check if this orbit fits within the planet's SOI
+      if (moonOrbitalRadius > maxSoiRadius) break;
+
+      const moonE = rng() * 0.05;
+      const moonOmega = rng() * 2 * Math.PI;
+      const moonNu0 = rng() * 2 * Math.PI;
+
+      const moonSoiRadius = computeSOIRadius(moonMass, planet.mass, moonOrbitalRadius);
+      const moonOrbitalElements = { a: moonOrbitalRadius, e: moonE, omega: moonOmega, nu0: moonNu0 };
+
+      // Initial position relative to parent planet
+      const { pos: moonLocalPos } = stateFromOrbitalElements(moonOrbitalRadius, moonE, moonOmega, moonNu0, planet.mu);
+
+      const moonHue = rng() * 360;
+      const [mr, mg, mb] = hslToRgb(moonHue, 0.2 + rng() * 0.2, 0.4 + rng() * 0.2);
+
+      const moon = {
+        kind: 'moon',
+        name: `${planet.name} ${MOON_SUFFIXES[m] || (m + 1)}`,
+        subtype: 'Moon',
+        x: planet.x + moonLocalPos.x,
+        y: planet.y + moonLocalPos.y,
+        radius: moonRadius,
+        mass: moonMass,
+        mu: moonMu,
+        soiRadius: moonSoiRadius,
+        orbitalElements: moonOrbitalElements,
+        parentBody: planet,
+        color: `rgb(${mr},${mg},${mb})`,
+        hue: moonHue,
+        description: `A natural satellite orbiting ${planet.name}.`,
+        details: {
+          'Type': 'Moon',
+          'Diameter': `${(moonRadius * 400).toFixed(0)} km`,
+          'Parent': planet.name,
+        },
+      };
+
+      planet.moons.push(moon);
+      planet.children.push(moon);
+      allMoons.push(moon);
+
+      // Advance next min radius beyond the apoapsis of this moon orbit
+      nextMinRadius = moonOrbitalRadius * (1 + moonE) + moonRadius + 5;
+    }
+
+    // Update moon count in planet details
+    planet.details['Moons'] = `${planet.moons.length}`;
+  }
+
+  const bodies = [star, ...planets, ...allMoons];
 
   // Anomaly (30% chance)
   if (rng() > 0.7) {
@@ -166,7 +257,7 @@ export function generateSystem(seed) {
   // Reset elapsed time when a new system is generated
   elapsedTime = 0;
 
-  return { star, planets, bodies };
+  return { star, planets, bodies, moons: allMoons };
 }
 
 function generatePlanetDesc(type, rng) {
@@ -196,5 +287,14 @@ export function updateBodyPositions(system, dt) {
 
     planet.x = pos.x;
     planet.y = pos.y;
+
+    // Propagate moon positions relative to parent planet
+    for (const moon of planet.moons) {
+      const { a: ma, e: me, omega: mOmega, nu0: mNu0 } = moon.orbitalElements;
+      const moonNu = trueAnomalyAtTime(elapsedTime, ma, me, planet.mu, mNu0);
+      const { pos: moonLocalPos } = stateFromOrbitalElements(ma, me, mOmega, moonNu, planet.mu);
+      moon.x = planet.x + moonLocalPos.x;
+      moon.y = planet.y + moonLocalPos.y;
+    }
   }
 }
