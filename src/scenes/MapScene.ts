@@ -1,7 +1,19 @@
 import Phaser from 'phaser';
 import type { ManeuverNode } from '../lib/maneuver.js';
-import type { MassiveBody, StarSystem, PlanetBody, MoonBody, Vec2 } from '../types/index.js';
+import {
+  createManeuverNode,
+  getNodeWorldPosition,
+  getHandlePositions,
+  hitTestHandles,
+  updateBurnFromDrag,
+  getPostBurnState,
+  getManeuverDeltaV,
+} from '../lib/maneuver.js';
+import { propagateTrajectory } from '../lib/trajectory.js';
+import { updateBodyPositions } from '../lib/celestial.js';
 import { computeOrbitalElements } from '../lib/orbit.js';
+import { getWarpRate, increaseWarp, decreaseWarp, resetWarp, WARP_STEPS } from '../lib/timewarp.js';
+import type { MassiveBody, StarSystem, PlanetBody, MoonBody, Vec2, ShipState } from '../types/index.js';
 
 // Registry keys shared between FlightScene and MapScene
 export const REGISTRY_KEY_SHIP_X = 'ship.x';
@@ -39,12 +51,44 @@ const HUD_MARGIN = 16;
 // Zoom lerp speed (fraction of gap closed per second)
 const ZOOM_LERP_SPEED = 4.0;
 
+// Maneuver node rendering
+const NODE_CIRCLE_RADIUS = 8;
+const NODE_CIRCLE_COLOR = 0xffaa00;
+const NODE_CIRCLE_ALPHA = 0.9;
+const HANDLE_PROGRADE_COLOR = 0x00ff88;
+const HANDLE_RETROGRADE_COLOR = 0xff4444;
+const HANDLE_NORMAL_COLOR = 0x88aaff;
+const HANDLE_RADIAL_COLOR = 0xffcc44;
+const HANDLE_RADIUS = 5;
+const HANDLE_LINE_ALPHA = 0.75;
+
+// Trajectory prediction rendering
+const TRAJECTORY_DASH_LEN = 8;
+const TRAJECTORY_GAP_LEN = 5;
+const TRAJECTORY_COLOR = 0xff8800;
+const TRAJECTORY_ALPHA = 0.65;
+const TRAJECTORY_LINE_WIDTH = 1.5;
+const SOI_MARKER_COLOR = 0xffffff;
+const SOI_MARKER_RADIUS = 6;
+const SOI_MARKER_ALPHA = 0.8;
+
+// Orbit click hit-test tolerance in world units (before zoom)
+const ORBIT_HIT_TOLERANCE = 12;
+
+// Dashed-path segment step size in world units
+const DASH_STEP = 8;
+
 export class MapScene extends Phaser.Scene {
   // Maneuver nodes live here so they persist between map open/close cycles within a session
   private maneuverNodes: ManeuverNode[] = [];
 
   private mKey!: Phaser.Input.Keyboard.Key;
+  private warpUpKey!: Phaser.Input.Keyboard.Key;
+  private warpDownKey!: Phaser.Input.Keyboard.Key;
+
   private soiLabel!: Phaser.GameObjects.Text;
+  private warpLabel!: Phaser.GameObjects.Text;
+  private dvLabel!: Phaser.GameObjects.Text;
 
   private soiBody!: MassiveBody;
   private system!: StarSystem;
@@ -53,9 +97,19 @@ export class MapScene extends Phaser.Scene {
   private orbitGfx!: Phaser.GameObjects.Graphics;
   private bodyGfx!: Phaser.GameObjects.Graphics;
   private shipGfx!: Phaser.GameObjects.Graphics;
+  private nodeGfx!: Phaser.GameObjects.Graphics;
+  private trajectoryGfx!: Phaser.GameObjects.Graphics;
 
   // Camera zoom target and current
   private targetZoom: number = 1;
+
+  // Drag state
+  private dragNode: ManeuverNode | null = null;
+  private dragHandle: ReturnType<typeof hitTestHandles> = null;
+  private dragLastWorld: Vec2 | null = null;
+
+  // Orbit elements for ship — cached per update so click-test can use them
+  private shipOrbitalElements: ReturnType<typeof computeOrbitalElements> | null = null;
 
   constructor() {
     super({ key: 'MapScene' });
@@ -69,10 +123,12 @@ export class MapScene extends Phaser.Scene {
   create(): void {
     this.cameras.main.setBackgroundColor('#000810');
 
-    // Graphics layers (depth ordered: orbits -> bodies -> ship)
-    this.orbitGfx = this.add.graphics().setDepth(1);
-    this.bodyGfx = this.add.graphics().setDepth(2);
-    this.shipGfx = this.add.graphics().setDepth(3);
+    // Graphics layers (depth ordered: trajectory -> orbits -> bodies -> nodes -> ship)
+    this.trajectoryGfx = this.add.graphics().setDepth(1);
+    this.orbitGfx = this.add.graphics().setDepth(2);
+    this.bodyGfx = this.add.graphics().setDepth(3);
+    this.nodeGfx = this.add.graphics().setDepth(4);
+    this.shipGfx = this.add.graphics().setDepth(5);
 
     // Calculate zoom to fit entire system
     this.targetZoom = this._calculateSystemZoom();
@@ -102,7 +158,7 @@ export class MapScene extends Phaser.Scene {
     void zoomLabel;
 
     const hint = this.add
-      .text(this.scale.width - HUD_MARGIN, HUD_MARGIN, 'M — return to flight', {
+      .text(this.scale.width - HUD_MARGIN, HUD_MARGIN, 'M — return to flight | , / . — time warp', {
         fontFamily: HUD_FONT_FAMILY,
         fontSize: '12px',
         color: HUD_COLOR_MUTED,
@@ -112,7 +168,38 @@ export class MapScene extends Phaser.Scene {
       .setDepth(10);
     void hint;
 
+    // Warp label (bottom-left)
+    this.warpLabel = this.add
+      .text(HUD_MARGIN, this.scale.height - HUD_MARGIN - 40, `Warp: ${getWarpRate()}x`, {
+        fontFamily: HUD_FONT_FAMILY,
+        fontSize: '14px',
+        color: HUD_COLOR_PRIMARY,
+      })
+      .setOrigin(0, 1)
+      .setScrollFactor(0)
+      .setDepth(10);
+
+    // Delta-V budget label (bottom-left, above warp label)
+    this.dvLabel = this.add
+      .text(HUD_MARGIN, this.scale.height - HUD_MARGIN - 60, 'Delta-V: 0.00 m/s', {
+        fontFamily: HUD_FONT_FAMILY,
+        fontSize: '14px',
+        color: '#ffaa44',
+      })
+      .setOrigin(0, 1)
+      .setScrollFactor(0)
+      .setDepth(10);
+
+    // Keyboard controls
     this.mKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.M);
+    // COMMA = warp down, PERIOD = warp up
+    this.warpDownKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.COMMA);
+    this.warpUpKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.PERIOD);
+
+    // Pointer events for node placement and dragging
+    this.input.on(Phaser.Input.Events.POINTER_DOWN, this._onPointerDown, this);
+    this.input.on(Phaser.Input.Events.POINTER_MOVE, this._onPointerMove, this);
+    this.input.on(Phaser.Input.Events.POINTER_UP, this._onPointerUp, this);
 
     // Initial render
     this._renderOrbits();
@@ -126,15 +213,157 @@ export class MapScene extends Phaser.Scene {
       return;
     }
 
+    // Time warp keyboard controls
+    if (Phaser.Input.Keyboard.JustDown(this.warpUpKey)) {
+      increaseWarp();
+      this._updateWarpLabel();
+    }
+    if (Phaser.Input.Keyboard.JustDown(this.warpDownKey)) {
+      decreaseWarp();
+      this._updateWarpLabel();
+    }
+
     // Smooth zoom lerp toward target
-    const dt = delta / 1000;
+    const rawDt = delta / 1000;
     const currentZoom = this.cameras.main.zoom;
-    const newZoom = currentZoom + (this.targetZoom - currentZoom) * Math.min(1, ZOOM_LERP_SPEED * dt);
+    const newZoom = currentZoom + (this.targetZoom - currentZoom) * Math.min(1, ZOOM_LERP_SPEED * rawDt);
     this.cameras.main.setZoom(newZoom);
+
+    // Advance body positions by warp-scaled dt
+    const warpedDt = rawDt * getWarpRate();
+    if (warpedDt > 0) {
+      updateBodyPositions(this.system, warpedDt);
+      this._renderOrbits();
+      this._renderBodies();
+      this._renderShip();
+      this._renderNodes();
+    }
   }
 
   private _returnToFlight(): void {
+    resetWarp();
     this.scene.start('FlightScene');
+  }
+
+  private _updateWarpLabel(): void {
+    const rate = getWarpRate();
+    this.warpLabel.setText(`Warp: ${rate}x`);
+    // Highlight non-1x warp in yellow
+    const isWarping = rate > 1;
+    this.warpLabel.setColor(isWarping ? '#ffdd44' : HUD_COLOR_PRIMARY);
+  }
+
+  private _updateDvLabel(): void {
+    let totalDv = 0;
+    for (const node of this.maneuverNodes) {
+      totalDv += getManeuverDeltaV(node);
+    }
+    this.dvLabel.setText(`Delta-V: ${totalDv.toFixed(2)} m/s`);
+  }
+
+  // Convert screen-space pointer position to world-space coordinates
+  private _pointerToWorld(pointer: Phaser.Input.Pointer): Vec2 {
+    const cam = this.cameras.main;
+    return {
+      x: (pointer.x - cam.centerX) / cam.zoom + cam.scrollX + cam.centerX,
+      y: (pointer.y - cam.centerY) / cam.zoom + cam.scrollY + cam.centerY,
+    };
+  }
+
+  // Pointer down: check for node handle hit, or try to place node on ship orbit
+  private _onPointerDown(pointer: Phaser.Input.Pointer): void {
+    const world = this._pointerToWorld(pointer);
+    const zoom = this.cameras.main.zoom;
+
+    // First: check if any existing node handle is being grabbed
+    for (const node of this.maneuverNodes) {
+      const handle = hitTestHandles(node, world.x, world.y, undefined, zoom);
+      if (handle !== null) {
+        this.dragNode = node;
+        this.dragHandle = handle;
+        this.dragLastWorld = { x: world.x, y: world.y };
+        // Pause warp during drag to avoid confusion
+        resetWarp();
+        this._updateWarpLabel();
+        return;
+      }
+    }
+
+    // Second: check if the click is near the ship's orbital path
+    this._tryPlaceManeuverNode(world, zoom);
+  }
+
+  private _onPointerMove(pointer: Phaser.Input.Pointer): void {
+    if (this.dragNode === null || this.dragHandle === null || this.dragLastWorld === null) return;
+
+    const world = this._pointerToWorld(pointer);
+    const delta: Vec2 = {
+      x: world.x - this.dragLastWorld.x,
+      y: world.y - this.dragLastWorld.y,
+    };
+
+    updateBurnFromDrag(this.dragNode, this.dragHandle, delta);
+    this.dragLastWorld = { x: world.x, y: world.y };
+
+    this._updateDvLabel();
+    this._renderNodes();
+    this._renderTrajectory();
+  }
+
+  private _onPointerUp(_pointer: Phaser.Input.Pointer): void {
+    this.dragNode = null;
+    this.dragHandle = null;
+    this.dragLastWorld = null;
+  }
+
+  // Attempt to place a maneuver node if the click is near the ship's orbit
+  private _tryPlaceManeuverNode(world: Vec2, zoom: number): void {
+    if (this.shipOrbitalElements === null) return;
+
+    const elements = this.shipOrbitalElements;
+    if (!isFinite(elements.a) || elements.a <= 0 || elements.e >= 1) return;
+
+    // Compute true anomaly at click position by projecting into the orbital frame
+    const bodyX = this.soiBody.x ?? 0;
+    const bodyY = this.soiBody.y ?? 0;
+
+    // Click relative to SOI body (focus of orbit)
+    const relX = world.x - bodyX;
+    const relY = world.y - bodyY;
+
+    // Rotate click into perifocal frame (un-rotate by -omega)
+    const cosO = Math.cos(-elements.omega);
+    const sinO = Math.sin(-elements.omega);
+    const perifX = cosO * relX - sinO * relY;
+    const perifY = sinO * relX + cosO * relY;
+
+    // True anomaly from perifocal coordinates
+    const nu = Math.atan2(perifY, perifX);
+
+    // Compute world position of that true anomaly on the orbit
+    const { a, e, omega } = elements;
+    const p = a * (1 - e * e);
+    const r = p / (1 + e * Math.cos(nu));
+    const xPerif = r * Math.cos(nu) - a * e;
+    const yPerif = r * Math.sin(nu);
+    const cosOmega = Math.cos(omega);
+    const sinOmega = Math.sin(omega);
+    const orbitWorldX = cosOmega * (xPerif + a * e) - sinOmega * yPerif + bodyX;
+    const orbitWorldY = sinOmega * (xPerif + a * e) + cosOmega * yPerif + bodyY;
+
+    // Distance from click to nearest point on orbit (world units, unscaled by zoom)
+    const hitTolerance = ORBIT_HIT_TOLERANCE / zoom;
+    const dx = world.x - orbitWorldX;
+    const dy = world.y - orbitWorldY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist > hitTolerance) return;
+
+    // Create node and add to list (replace existing node at close nu if desired — for now allow multiples)
+    const node = createManeuverNode(nu, elements, this.soiBody);
+    this.maneuverNodes.push(node);
+    this._updateDvLabel();
+    this._renderNodes();
   }
 
   // Calculate zoom so the outermost planet orbit fits the viewport with padding
@@ -253,6 +482,7 @@ export class MapScene extends Phaser.Scene {
       shipVx === undefined ||
       shipVy === undefined
     ) {
+      this.shipOrbitalElements = null;
       return;
     }
 
@@ -265,10 +495,18 @@ export class MapScene extends Phaser.Scene {
     const r = Math.hypot(relPos.x, relPos.y);
     const v2 = relVel.x * relVel.x + relVel.y * relVel.y;
     const epsilon = v2 / 2 - mu / r;
-    if (epsilon >= 0 || r < 1e-6) return; // hyperbolic or degenerate
+    if (epsilon >= 0 || r < 1e-6) {
+      this.shipOrbitalElements = null;
+      return;
+    }
 
     const elements = computeOrbitalElements(relPos, relVel, mu);
-    if (!isFinite(elements.a) || elements.a <= 0 || elements.e >= 1) return;
+    if (!isFinite(elements.a) || elements.a <= 0 || elements.e >= 1) {
+      this.shipOrbitalElements = null;
+      return;
+    }
+
+    this.shipOrbitalElements = elements;
 
     this._drawOrbitEllipse(
       this.orbitGfx,
@@ -372,6 +610,157 @@ export class MapScene extends Phaser.Scene {
     }
   }
 
+  // Draw all maneuver nodes and their handles
+  private _renderNodes(): void {
+    this.nodeGfx.clear();
+
+    const zoom = this.cameras.main.zoom;
+
+    for (const node of this.maneuverNodes) {
+      const origin = getNodeWorldPosition(node);
+      const handles = getHandlePositions(node, zoom);
+
+      // Node center circle
+      this.nodeGfx.lineStyle(2, NODE_CIRCLE_COLOR, NODE_CIRCLE_ALPHA);
+      this.nodeGfx.strokeCircle(origin.x, origin.y, NODE_CIRCLE_RADIUS / zoom);
+
+      // Delta-V text near node — use a Graphics line pattern to indicate magnitude
+      // Draw handles as colored lines from origin to handle tip, then a dot at tip
+      this._drawHandle(origin, handles.prograde, HANDLE_PROGRADE_COLOR);
+      this._drawHandle(origin, handles.retrograde, HANDLE_RETROGRADE_COLOR);
+      this._drawHandle(origin, handles.normal, HANDLE_NORMAL_COLOR);
+      this._drawHandle(origin, handles.radial, HANDLE_RADIAL_COLOR);
+
+      // Show dv values as small text labels (use existing Text objects recycled or created on demand)
+      // For simplicity, we annotate via the nodeGfx using short tick lines at the handle tips
+    }
+  }
+
+  private _drawHandle(origin: Vec2, tip: Vec2, color: number): void {
+    this.nodeGfx.lineStyle(1.5, color, HANDLE_LINE_ALPHA);
+    this.nodeGfx.beginPath();
+    this.nodeGfx.moveTo(origin.x, origin.y);
+    this.nodeGfx.lineTo(tip.x, tip.y);
+    this.nodeGfx.strokePath();
+
+    this.nodeGfx.fillStyle(color, 1.0);
+    this.nodeGfx.fillCircle(tip.x, tip.y, HANDLE_RADIUS / this.cameras.main.zoom);
+  }
+
+  // Render post-burn trajectory prediction as a dashed path
+  private _renderTrajectory(): void {
+    this.trajectoryGfx.clear();
+
+    if (this.maneuverNodes.length === 0) return;
+
+    for (const node of this.maneuverNodes) {
+      // Only render trajectory for nodes that have a non-zero burn
+      const dv = getManeuverDeltaV(node);
+      if (dv < 0.001) continue;
+
+      const postBurn = getPostBurnState(node);
+
+      const shipState: ShipState = {
+        pos: { x: postBurn.x, y: postBurn.y },
+        vel: { x: postBurn.vx, y: postBurn.vy },
+        soiBody: node.soiBody,
+      };
+
+      const segments = propagateTrajectory(shipState, this.system, {
+        maxTime: 800,
+        stepSize: 2.0,
+        maxSegments: 3,
+        simBaseTime: 0,
+      });
+
+      for (const seg of segments) {
+        if (seg.points.length < 2) continue;
+
+        // propagateTrajectory returns world-space points via virtualWorldPosition,
+        // which adds the SOI body's current world offset internally.
+        this._drawDashedPath(seg.points, TRAJECTORY_COLOR, TRAJECTORY_ALPHA, TRAJECTORY_LINE_WIDTH);
+
+        // Draw SOI transition markers
+        for (const marker of seg.markers) {
+          if (marker.type === 'soi-entry' || marker.type === 'soi-exit') {
+            this.trajectoryGfx.lineStyle(1.5, SOI_MARKER_COLOR, SOI_MARKER_ALPHA);
+            this.trajectoryGfx.strokeCircle(marker.x, marker.y, SOI_MARKER_RADIUS / this.cameras.main.zoom);
+          }
+        }
+      }
+
+      // Draw a thin connector from the node world position to the trajectory start point.
+      // propagateTrajectory returns world-space points (virtualWorldPosition already applied
+      // the SOI body offset), so no additional offset is needed here.
+      if (segments.length > 0 && (segments[0]?.points.length ?? 0) > 0) {
+        const firstPoint = segments[0]!.points[0]!;
+        const nodeWorld = getNodeWorldPosition(node);
+
+        this.trajectoryGfx.lineStyle(1, TRAJECTORY_COLOR, 0.4);
+        this.trajectoryGfx.beginPath();
+        this.trajectoryGfx.moveTo(nodeWorld.x, nodeWorld.y);
+        this.trajectoryGfx.lineTo(firstPoint.x, firstPoint.y);
+        this.trajectoryGfx.strokePath();
+      }
+    }
+  }
+
+  // Draw a dashed line through an array of world-space Vec2 points.
+  // Uses cumulative distance along the path to determine dash/gap phases.
+  private _drawDashedPath(points: Vec2[], color: number, alpha: number, lineWidth: number): void {
+    if (points.length < 2) return;
+
+    this.trajectoryGfx.lineStyle(lineWidth, color, alpha);
+
+    const dashLen = TRAJECTORY_DASH_LEN / this.cameras.main.zoom;
+    const gapLen = TRAJECTORY_GAP_LEN / this.cameras.main.zoom;
+    const cycleLen = dashLen + gapLen;
+
+    // Total cumulative distance along the path
+    let distAccum = 0;
+
+    for (let i = 1; i < points.length; i++) {
+      const ax = points[i - 1]!.x;
+      const ay = points[i - 1]!.y;
+      const bx = points[i]!.x;
+      const by = points[i]!.y;
+
+      const segDx = bx - ax;
+      const segDy = by - ay;
+      const segLen = Math.sqrt(segDx * segDx + segDy * segDy);
+      if (segLen < 1e-6) continue;
+
+      const ux = segDx / segLen;
+      const uy = segDy / segLen;
+
+      // Walk the segment in pieces bounded by dash/gap transitions
+      let walked = 0;
+      while (walked < segLen) {
+        // Position within the current cycle
+        const phase = distAccum % cycleLen;
+        const isDrawing = phase < dashLen;
+
+        // Distance to the next phase boundary within the cycle
+        const distToNextBoundary = isDrawing ? (dashLen - phase) : (cycleLen - phase);
+        const step = Math.min(distToNextBoundary, segLen - walked);
+
+        if (isDrawing) {
+          const x0 = ax + ux * walked;
+          const y0 = ay + uy * walked;
+          const x1 = x0 + ux * step;
+          const y1 = y0 + uy * step;
+          this.trajectoryGfx.beginPath();
+          this.trajectoryGfx.moveTo(x0, y0);
+          this.trajectoryGfx.lineTo(x1, y1);
+          this.trajectoryGfx.strokePath();
+        }
+
+        distAccum += step;
+        walked += step;
+      }
+    }
+  }
+
   // Convert HSL hue + saturation + lightness to a hex color string (#rrggbb)
   private _hueToHexString(hue: number, s: number, l: number): string {
     const h = hue / 360;
@@ -393,7 +782,7 @@ export class MapScene extends Phaser.Scene {
     return p;
   }
 
-  // Expose maneuver nodes for future tasks (Task 3 will interact with them)
+  // Expose maneuver nodes for persistence across scene transitions
   getManeuverNodes(): ManeuverNode[] {
     return this.maneuverNodes;
   }
