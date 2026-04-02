@@ -11,6 +11,7 @@ import {
   SYSTEM_TRANSITION_RADIUS as SCALE_SYSTEM_TRANSITION_RADIUS,
   SHIP_START_ORBIT_FACTOR,
 } from '../lib/scaleConfig.js';
+import { getWarpRate, increaseWarp, decreaseWarp, resetWarp, shouldAutoDropWarp } from '../lib/timewarp.js';
 import type { StarSystem, MassiveBody, ShipState } from '../types/index';
 import type { InputState } from '../objects/Ship';
 import type { LandingSceneData } from './LandingScene';
@@ -83,6 +84,7 @@ interface HudTextObjects {
   altitudeLabel: Phaser.GameObjects.Text;
   fuelLabel: Phaser.GameObjects.Text;
   systemLabel: Phaser.GameObjects.Text;
+  warpLabel: Phaser.GameObjects.Text;
 }
 
 interface HudGraphics {
@@ -119,6 +121,8 @@ export class FlightScene extends Phaser.Scene {
     D: Phaser.Input.Keyboard.Key;
   };
   private mKey!: Phaser.Input.Keyboard.Key;
+  private warpUpKey!: Phaser.Input.Keyboard.Key;
+  private warpDownKey!: Phaser.Input.Keyboard.Key;
 
   private starLayers: StarPoint[][] = [];
 
@@ -189,6 +193,9 @@ export class FlightScene extends Phaser.Scene {
       D: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D),
     };
     this.mKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.M);
+    // COMMA = warp down, PERIOD = warp up (same convention as MapScene)
+    this.warpDownKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.COMMA);
+    this.warpUpKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.PERIOD);
 
     // Mouse scroll wheel: zoom override — temporarily suspends auto-zoom
     this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _gameObjects: unknown, _deltaX: number, deltaY: number) => {
@@ -233,20 +240,58 @@ export class FlightScene extends Phaser.Scene {
       return;
     }
 
+    // Time warp keyboard controls
+    if (Phaser.Input.Keyboard.JustDown(this.warpUpKey)) {
+      increaseWarp();
+    }
+    if (Phaser.Input.Keyboard.JustDown(this.warpDownKey)) {
+      decreaseWarp();
+    }
+
     // Read input
     const input = this._readInput();
 
-    // Build ShipState for physics functions
+    // Compute warped dt for physics; raw dt is kept for smooth camera lerp
+    const warpedDt = dt * getWarpRate();
+
+    // Physics stability substeps: when warped dt is large, divide into smaller steps
+    // to prevent tunneling through SOI boundaries at high warp rates.
+    const MAX_SUBSTEP = 0.1; // seconds — maximum substep size
+    const substepCount = warpedDt > MAX_SUBSTEP ? Math.ceil(warpedDt / MAX_SUBSTEP) : 1;
+    const substepDt = warpedDt / substepCount;
+
+    let soiJustChanged = false;
+
+    for (let step = 0; step < substepCount; step++) {
+      // Build ship state before this substep
+      const shipState = this._buildShipState();
+
+      // Update ship physics with warped substep dt
+      this.ship.update(substepDt, input, this.soiBody);
+
+      // Advance celestial body orbital positions
+      updateBodyPositions(this.system, substepDt);
+
+      // Check for SOI transitions
+      const soiBefore = this.soiBody;
+      this._handleSOITransition(shipState);
+      if (this.soiBody !== soiBefore) {
+        soiJustChanged = true;
+      }
+
+      // Safety rails: auto-drop warp on thrust, SOI change, or surface proximity
+      const distToCenter = Math.sqrt(this.ship.x * this.ship.x + this.ship.y * this.ship.y);
+      const altitude = distToCenter - this.soiBody.radius;
+      if (shouldAutoDropWarp(this.ship.thrustActive, altitude, this.soiBody.radius, soiJustChanged)) {
+        resetWarp();
+      }
+
+      // Reset per-substep soiJustChanged after check (only flag it once per transition)
+      soiJustChanged = false;
+    }
+
+    // Build final ship state for landing and system transition checks
     const shipState = this._buildShipState();
-
-    // Update ship physics
-    this.ship.update(dt, input, this.soiBody);
-
-    // Advance celestial body orbital positions
-    updateBodyPositions(this.system, dt);
-
-    // Check for SOI transitions
-    this._handleSOITransition(shipState);
 
     // Check if approaching a landable body — hand off to LandingScene
     if (this._checkLandingApproach(shipState)) return;
@@ -254,7 +299,7 @@ export class FlightScene extends Phaser.Scene {
     // Check for system boundary transition
     this._handleSystemTransition();
 
-    // Update camera to smoothly follow ship
+    // Update camera to smoothly follow ship (always raw dt — camera must be smooth)
     this._updateCamera(dt);
 
     // --- Render ---
@@ -387,7 +432,18 @@ export class FlightScene extends Phaser.Scene {
     y += HUD_FUEL_BAR_HEIGHT + 4;
     const systemLabel = this.add.text(x, y, `SEED: ${this.currentSeed}`, mutedStyle).setScrollFactor(0).setDepth(10);
 
-    this.hud = { soiLabel, velocityLabel, altitudeLabel, fuelLabel, systemLabel };
+    // Warp rate indicator — top-right corner
+    const warpLabel = this.add
+      .text(width - HUD_MARGIN, HUD_MARGIN, 'WARP: 1x', {
+        fontFamily: HUD_FONT_FAMILY,
+        fontSize: HUD_FONT_SIZE,
+        color: HUD_COLOR_MUTED,
+      })
+      .setScrollFactor(0)
+      .setDepth(10)
+      .setOrigin(1, 0); // right-align
+
+    this.hud = { soiLabel, velocityLabel, altitudeLabel, fuelLabel, systemLabel, warpLabel };
 
     // Trajectory graphics object (screen-space, depth between world and ship)
     const trajectoryGfx = this.add.graphics().setScrollFactor(0).setDepth(1);
@@ -495,6 +551,9 @@ export class FlightScene extends Phaser.Scene {
     this.ship.orbit = newOrbitInfo;
 
     this.soiBody = newBody;
+
+    // Drop warp immediately on SOI entry — trajectory changes discontinuously
+    resetWarp();
   }
 
   private _handleSystemTransition(): void {
@@ -738,6 +797,9 @@ export class FlightScene extends Phaser.Scene {
   }
 
   private _switchToMapScene(): void {
+    // Drop warp when leaving flight view — map scene manages its own warp state
+    resetWarp();
+
     // Persist ship state to the Phaser registry so MapScene (and this scene on resume) can read it
     this.registry.set('ship.x', this.ship.x);
     this.registry.set('ship.y', this.ship.y);
@@ -760,6 +822,12 @@ export class FlightScene extends Phaser.Scene {
     this.hud.soiLabel.setText(`SOI: ${this.soiBody.name}`);
     this.hud.velocityLabel.setText(`VEL: ${speed.toFixed(1)} u/s`);
     this.hud.altitudeLabel.setText(`ALT: ${altitude.toFixed(0)} u`);
+
+    // Update warp indicator — yellow when warping, muted when at 1x
+    const warpRate = getWarpRate();
+    const isWarping = warpRate > 1;
+    this.hud.warpLabel.setText(`WARP: ${warpRate}x`);
+    this.hud.warpLabel.setColor(isWarping ? '#ffdd44' : HUD_COLOR_MUTED);
 
     // Redraw fuel bar
     this.hudGfx.fuelBar.clear();

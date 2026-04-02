@@ -109,18 +109,19 @@ Wire time warp into FlightScene following the same patterns MapScene uses:
 
 <done>
 FlightScene has comma/period warp controls, warped dt applied to all physics, substep loop for stability at high warp, auto-drop on thrust/SOI/surface, warp rate HUD label visible and color-coded. Build passes.
+Completed: 2026-04-02
 </done>
 
 ## Verification Checklist
 - [x] WARP_STEPS includes [1, 10, 100, 1000, 10000, 100000]
 - [x] shouldAutoDropWarp exported and handles thrust, SOI change, surface proximity
-- [ ] FlightScene comma/period keys control warp
-- [ ] Physics uses warpedDt with substep loop for stability
-- [ ] Warp auto-drops to 1x on thrust
-- [ ] Warp auto-drops to 1x on SOI transition
-- [ ] Warp auto-drops to 1x near body surface
-- [ ] HUD shows warp rate, yellow when > 1x
-- [ ] `npx vite build` passes with no errors
+- [x] FlightScene comma/period keys control warp
+- [x] Physics uses warpedDt with substep loop for stability
+- [x] Warp auto-drops to 1x on thrust
+- [x] Warp auto-drops to 1x on SOI transition
+- [x] Warp auto-drops to 1x near body surface
+- [x] HUD shows warp rate, yellow when > 1x
+- [x] `npx vite build` passes with no errors
 
 ## Success Criteria
 Player can engage time warp in flight view with comma/period. Max warp (100000x) makes 50,000+ gu transits complete in under 2 minutes. Warp auto-cancels on SOI entry, thrust, or surface approach. Warp indicator visible in HUD. Physics stable at all warp levels (substep integration prevents tunneling). Build passes cleanly.
