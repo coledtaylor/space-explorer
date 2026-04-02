@@ -8,6 +8,7 @@ import { checkSOITransition, shipWorldPosition } from './physics.js';
 import { dist } from './utils.js';
 import { MapMode } from './mapmode.js';
 import { getWarpRate, increaseWarp, decreaseWarp, resetWarp } from './timewarp.js';
+import { updateBurnGuide, drawBurnGuide } from './burnguide.js';
 import {
   createManeuverNode,
   getNodeWorldPosition,
@@ -51,6 +52,12 @@ const orbitHud = document.getElementById('orbit-hud');
 const maneuverInfo = document.getElementById('maneuver-info');
 const maneuverDvDisplay = document.getElementById('maneuver-dv');
 
+// Burn guidance HUD elements
+const burnGuideEl = document.getElementById('burn-guide');
+const burnCountdown = document.getElementById('burn-countdown');
+const burnDvRemaining = document.getElementById('burn-dv-remaining');
+const burnStatus = document.getElementById('burn-status');
+
 // Orbital HUD elements
 const altDisplay = document.getElementById('alt-display');
 const velDisplay = document.getElementById('vel-display');
@@ -63,6 +70,7 @@ const soiDisplay = document.getElementById('soi-display');
 let running = false;
 let time = 0;
 let prevMapState = false;
+let burnGuidance = null;
 
 // Maneuver node drag state
 let activeManeuverHandle = null;
@@ -123,6 +131,7 @@ function loop(timestamp) {
   // Consume warp key presses once per frame (before sub-stepping)
   if (input.consumeWarpUp()) increaseWarp();
   if (input.consumeWarpDown()) decreaseWarp();
+  if (input.consumeClearNode()) maneuverNodes.length = 0;
 
   // Compute effective dt with warp and divide into stable sub-steps
   const warpRate = getWarpRate();
@@ -219,6 +228,47 @@ function update(dt) {
     periodDisplay.textContent = '\u221e';
   }
 
+  // Burn guidance — only active in flight mode
+  if (!mapMode.isActive()) {
+    burnGuidance = updateBurnGuide(ship, maneuverNodes, time, dt);
+  } else {
+    burnGuidance = null;
+  }
+
+  if (burnGuidance) {
+    burnGuideEl.classList.remove('hidden');
+
+    // Format T-BURN countdown
+    const t = burnGuidance.timeToBurn;
+    let countdownText;
+    if (t < 10) {
+      countdownText = t.toFixed(1) + 's';
+    } else {
+      const mins = Math.floor(t / 60);
+      const secs = Math.floor(t % 60);
+      countdownText = mins + ':' + (secs < 10 ? '0' : '') + secs;
+    }
+    burnCountdown.textContent = countdownText;
+
+    // dV remaining
+    burnDvRemaining.textContent = burnGuidance.dvRemaining.toFixed(1);
+
+    // Status text and class
+    const phase = burnGuidance.phase;
+    burnStatus.textContent = phase.toUpperCase();
+    burnStatus.className = 'status-' + phase;
+
+    // Active glow when burning
+    if (phase === 'burn') {
+      burnGuideEl.classList.add('burn-active');
+    } else {
+      burnGuideEl.classList.remove('burn-active');
+    }
+  } else {
+    burnGuideEl.classList.add('hidden');
+    burnGuideEl.classList.remove('burn-active');
+  }
+
   // Find nearest body for scan interaction (use world-space distances)
   let nearest = null;
   let nearestDist = Infinity;
@@ -265,14 +315,25 @@ function update(dt) {
       // Convert screen click to world coords
       const worldX = (dragStart.x - canvas.width / 2) / zoom + mapCam.x;
       const worldY = (dragStart.y - canvas.height / 2) / zoom + mapCam.y;
-      const hitRadius = 12 / zoom;
-      const hitHandle = hitTestHandles(maneuverNodes[0], worldX, worldY, hitRadius);
+      const hitRadius = 20 / zoom;
+      const hitHandle = hitTestHandles(maneuverNodes[0], worldX, worldY, hitRadius, zoom);
       if (hitHandle) {
         activeManeuverHandle = hitHandle;
         prevDragX = dragStart.x;
         prevDragY = dragStart.y;
       } else {
-        activeManeuverHandle = null;
+        // Check if clicking near the node center — default to prograde
+        const nodePos = getNodeWorldPosition(maneuverNodes[0]);
+        const dxn = worldX - nodePos.x;
+        const dyn = worldY - nodePos.y;
+        const distToNode = Math.sqrt(dxn * dxn + dyn * dyn);
+        if (distToNode < 30 / zoom) {
+          activeManeuverHandle = 'prograde';
+          prevDragX = dragStart.x;
+          prevDragY = dragStart.y;
+        } else {
+          activeManeuverHandle = null;
+        }
       }
     }
 
@@ -311,8 +372,6 @@ function update(dt) {
           const d = dist(worldX, worldY, wx, wy);
           if (d < bestDist) {
             bestDist = d;
-            // Convert eccentric anomaly theta to true anomaly
-            // xE = a*cos(theta) - c => cos(theta) = (xE + c)/a
             const cosTheta = (xE + c) / a;
             const sinTheta = yE / b;
             const E = Math.atan2(sinTheta, cosTheta);
@@ -323,7 +382,7 @@ function update(dt) {
           }
         }
 
-        const clickThreshold = 20 / zoom;
+        const clickThreshold = 30 / zoom;
         if (bestDist <= clickThreshold) {
           const node = createManeuverNode(bestNu, orbit, soiBody);
           maneuverNodes[0] = node;
@@ -464,7 +523,7 @@ function render() {
   const trajectorySegments = propagateTrajectory(
     { x: ship.x, y: ship.y, vx: ship.vx, vy: ship.vy, currentSOIBody: ship.currentSOIBody },
     system,
-    { maxTime: 600, maxSegments: 3, simBaseTime: time }
+    { maxTime: 600, stepSize: 0.25, maxSegments: 3, simBaseTime: time }
   );
   drawTrajectory(ctx, effectiveCam, trajectorySegments, zoom);
 
@@ -472,12 +531,17 @@ function render() {
   const wp = shipWorldPosition(ship, system);
   ship.draw(ctx, effectiveCam, wp, zoom);
 
+  // Draw burn heading marker in flight mode
+  if (!mapMode.isActive() && burnGuidance) {
+    drawBurnGuide(ctx, effectiveCam, ship, burnGuidance, zoom);
+  }
+
   // Draw maneuver nodes and post-burn trajectory in map mode
   if (mapMode.isActive() && maneuverNodes[0]) {
     const node = maneuverNodes[0];
     // getNodeWorldPosition and getHandlePositions already include the soiBody world offset
     node.worldPos = getNodeWorldPosition(node);
-    node.handlePositions = getHandlePositions(node);
+    node.handlePositions = getHandlePositions(node, zoom);
     const dv = getManeuverDeltaV(node);
     node.dvLabel = dv.toFixed(1) + ' m/s';
 

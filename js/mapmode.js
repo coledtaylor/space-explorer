@@ -34,8 +34,8 @@ export class MapMode {
   _maxOrbitRadius(system) {
     let maxR = 0;
     for (const planet of system.planets) {
-      if (planet.orbitRadius && planet.orbitRadius > maxR) {
-        maxR = planet.orbitRadius;
+      if (planet.orbitalElements && planet.orbitalElements.a > maxR) {
+        maxR = planet.orbitalElements.a;
       }
     }
     return maxR;

@@ -50,18 +50,23 @@ function velocityAngle(node) {
 
 // Return four handle endpoints (world-space {x, y}) keyed by direction name
 // Handle length = HANDLE_BASE_LENGTH + |component| * HANDLE_DV_SCALE
-export function getHandlePositions(node) {
+export function getHandlePositions(node, zoom) {
   const origin = getNodeWorldPosition(node);
   const angle = velocityAngle(node);
+  const z = zoom || 1;
 
   // Prograde = velocity direction, normal = 90 degrees CCW from prograde
   const cosA = Math.cos(angle);
   const sinA = Math.sin(angle);
 
+  // Scale handle length inversely with zoom so handles stay grabbable at map zoom
+  const baseLen = HANDLE_BASE_LENGTH / z;
+  const dvScale = HANDLE_DV_SCALE / z;
+
   // Prograde/retrograde axis
-  const pgLen = HANDLE_BASE_LENGTH + Math.abs(node.burnVector.prograde) * HANDLE_DV_SCALE;
+  const pgLen = baseLen + Math.abs(node.burnVector.prograde) * dvScale;
   // Normal/radial axis (perpendicular: rotate 90 deg CCW => (-sinA, cosA))
-  const nmLen = HANDLE_BASE_LENGTH + Math.abs(node.burnVector.normal) * HANDLE_DV_SCALE;
+  const nmLen = baseLen + Math.abs(node.burnVector.normal) * dvScale;
 
   return {
     prograde: {
@@ -84,8 +89,8 @@ export function getHandlePositions(node) {
 }
 
 // Returns which handle name is within grab radius of (worldX, worldY), or null
-export function hitTestHandles(node, worldX, worldY, handleLength) {
-  const handles = getHandlePositions(node);
+export function hitTestHandles(node, worldX, worldY, handleLength, zoom) {
+  const handles = getHandlePositions(node, zoom);
   const names = ['prograde', 'retrograde', 'normal', 'radial'];
   const grabRadius = handleLength !== undefined ? handleLength : HANDLE_HIT_RADIUS;
 
@@ -107,22 +112,21 @@ export function updateBurnFromDrag(node, handle, dragDeltaWorld) {
   const cosA = Math.cos(angle);
   const sinA = Math.sin(angle);
 
+  // Sensitivity: higher value = more drag needed per unit delta-v
+  const sensitivity = 5;
+
   if (handle === 'prograde') {
-    // Project drag onto prograde direction
     const proj = dragDeltaWorld.x * cosA + dragDeltaWorld.y * sinA;
-    node.burnVector.prograde += proj / HANDLE_DV_SCALE;
+    node.burnVector.prograde += proj / sensitivity;
   } else if (handle === 'retrograde') {
-    // Retrograde: dragging away from center decreases prograde
     const proj = dragDeltaWorld.x * cosA + dragDeltaWorld.y * sinA;
-    node.burnVector.prograde -= proj / HANDLE_DV_SCALE;
+    node.burnVector.prograde -= proj / sensitivity;
   } else if (handle === 'normal') {
-    // Normal direction: (-sinA, cosA)
     const proj = dragDeltaWorld.x * (-sinA) + dragDeltaWorld.y * cosA;
-    node.burnVector.normal += proj / HANDLE_DV_SCALE;
+    node.burnVector.normal += proj / sensitivity;
   } else if (handle === 'radial') {
-    // Radial: dragging away from center decreases normal
     const proj = dragDeltaWorld.x * (-sinA) + dragDeltaWorld.y * cosA;
-    node.burnVector.normal -= proj / HANDLE_DV_SCALE;
+    node.burnVector.normal -= proj / sensitivity;
   }
 }
 

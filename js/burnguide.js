@@ -18,20 +18,18 @@ function clearState() {
 }
 
 // Compute time-to-burn in seconds given ship's current orbital state vs node true anomaly
-// Uses mean motion to estimate time from current nu to node nu along the orbit
 function computeTimeToBurn(ship, node) {
-  const { a, e, T } = node.orbitalElements;
+  const { a, e } = node.orbitalElements;
   const mu = node.soiBody.mu;
   const n = Math.sqrt(mu / (a * a * a)); // mean motion
 
-  // Convert ship current true anomaly to mean anomaly
-  const nuShip = ship.orbit.nu;
+  const nuShip = ship.orbit ? ship.orbit.nu : 0;
   const nuNode = node.nu;
 
-  // Convert true anomaly to eccentric anomaly
+  // Convert true anomaly to mean anomaly
   function nuToM(nu) {
-    const tanHalf = Math.tan(nu / 2);
-    const E = 2 * Math.atan(Math.sqrt((1 - e) / (1 + e)) * tanHalf);
+    const cosNu = Math.cos(nu);
+    const E = Math.atan2(Math.sqrt(1 - e * e) * Math.sin(nu), e + cosNu);
     return E - e * Math.sin(E);
   }
 
@@ -40,9 +38,9 @@ function computeTimeToBurn(ship, node) {
 
   // Delta mean anomaly from ship to node (forward in orbit)
   let dM = Mnode - Mship;
-  // Normalize to [0, 2*pi)
-  while (dM < 0) dM += 2 * Math.PI;
-  while (dM >= 2 * Math.PI) dM -= 2 * Math.PI;
+  // Normalize to (-pi, pi] so we get signed time (negative = past the node)
+  while (dM > Math.PI) dM -= 2 * Math.PI;
+  while (dM < -Math.PI) dM += 2 * Math.PI;
 
   return dM / n;
 }
@@ -69,16 +67,17 @@ export function updateBurnGuide(ship, maneuverNodes, time, dt) {
   const timeToBurn = computeTimeToBurn(ship, node);
 
   // Phase transitions
-  if (burnPhase === 'coast' && timeToBurn <= 10) {
+  const absTime = Math.abs(timeToBurn);
+  if (burnPhase === 'coast' && absTime <= 15) {
     burnPhase = 'align';
   }
-  if (burnPhase === 'align' && timeToBurn <= 0) {
+  if (burnPhase === 'align' && absTime <= 2) {
     burnPhase = 'burn';
     prevSpeed = ship.getSpeed();
   }
 
-  // Allow manual burn entry: if thrusting while in align phase and close to node
-  if (burnPhase === 'align' && ship.thrustActive && timeToBurn <= 30) {
+  // Allow burn entry: if thrusting during coast or align phase
+  if ((burnPhase === 'coast' || burnPhase === 'align') && ship.thrustActive) {
     burnPhase = 'burn';
     prevSpeed = ship.getSpeed();
   }

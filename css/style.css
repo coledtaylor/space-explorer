@@ -295,6 +295,96 @@ body {
   letter-spacing: 0.5px;
 }
 
+/* Burn Guidance HUD */
+#burn-guide {
+  position: absolute;
+  bottom: 230px;
+  left: 20px;
+  padding: 10px 14px;
+  background: rgba(0, 5, 15, 0.85);
+  border: 1px solid rgba(79, 195, 247, 0.3);
+  border-radius: 6px;
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+  min-width: 160px;
+}
+
+#burn-guide.burn-active {
+  border-color: rgba(79, 195, 247, 0.7);
+  box-shadow: 0 0 10px rgba(79, 195, 247, 0.2);
+}
+
+.burn-guide-header {
+  font-size: 10px;
+  font-family: 'Courier New', monospace;
+  color: #334455;
+  letter-spacing: 2px;
+  font-variant: small-caps;
+  margin-bottom: 4px;
+}
+
+.burn-guide-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  line-height: 1.7;
+}
+
+.burn-guide-label {
+  font-size: 11px;
+  font-family: 'Courier New', monospace;
+  color: #556677;
+  letter-spacing: 0.5px;
+  width: 44px;
+  flex-shrink: 0;
+}
+
+.burn-guide-unit {
+  font-size: 10px;
+  font-family: 'Courier New', monospace;
+  color: #445566;
+}
+
+#burn-countdown,
+#burn-dv-remaining {
+  font-size: 13px;
+  font-family: 'Courier New', monospace;
+  color: #4fc3f7;
+  text-shadow: 0 0 6px rgba(79, 195, 247, 0.4);
+  letter-spacing: 0.5px;
+}
+
+#burn-status {
+  font-size: 13px;
+  font-family: 'Courier New', monospace;
+  letter-spacing: 0.5px;
+}
+
+#burn-status.status-coast {
+  color: #4fc3f7;
+  text-shadow: 0 0 6px rgba(79, 195, 247, 0.4);
+}
+
+#burn-status.status-align {
+  color: #ffeb3b;
+  text-shadow: 0 0 6px rgba(255, 235, 59, 0.4);
+}
+
+#burn-status.status-burn {
+  color: #66ff66;
+  text-shadow: 0 0 8px rgba(100, 255, 100, 0.5);
+  animation: burn-pulse 0.8s ease-in-out infinite;
+}
+
+#burn-status.status-done {
+  color: #445566;
+}
+
+@keyframes burn-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
 .hidden {
   display: none;
 }

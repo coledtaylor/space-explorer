@@ -22,16 +22,16 @@ export function drawBody(ctx, body, camera, time, zoom) {
     drawAnomaly(ctx, sx, sy, body, time, zoom);
   }
 
-  // Name label — scale inversely with zoom so text stays readable at map zoom
-  const labelScale = 1 / zoom;
-  ctx.save();
-  ctx.translate(sx, sy + dr + 18 * labelScale);
-  ctx.scale(labelScale, labelScale);
-  ctx.font = '11px "Segoe UI", system-ui, sans-serif';
-  ctx.fillStyle = 'rgba(200, 210, 220, 0.6)';
+  // Name label — hide moons at map zoom, skip tiny bodies
+  const screenRadius = dr;
+  if (body.kind === 'moon' && screenRadius < 4) return;
+  if (screenRadius < 1.5) return;
+
+  ctx.font = '10px "Segoe UI", system-ui, sans-serif';
+  const alpha = body.kind === 'moon' ? 0.35 : 0.5;
+  ctx.fillStyle = `rgba(200, 210, 220, ${alpha})`;
   ctx.textAlign = 'center';
-  ctx.fillText(body.name, 0, 0);
-  ctx.restore();
+  ctx.fillText(body.name, sx, sy + dr + 12);
 }
 
 function drawStar(ctx, sx, sy, body, time, zoom) {
@@ -537,6 +537,161 @@ function lighten(color, amount) {
   if (!match) return color;
   const [r, g, b] = match.map(Number);
   return `rgb(${Math.min(255, r + amount)},${Math.min(255, g + amount)},${Math.min(255, b + amount)})`;
+}
+
+// Draw predicted trajectory segments returned by propagateTrajectory()
+// segments: [{ points: [{x,y}], soiBody, color, markers: [] }, ...]
+export function drawTrajectory(ctx, camera, segments, zoom) {
+  if (!segments || segments.length === 0) return;
+  zoom = zoom || 1;
+
+  for (const segment of segments) {
+    if (!segment.points || segment.points.length < 2) continue;
+
+    // Draw the polyline for this segment
+    ctx.beginPath();
+    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = segment.color;
+    ctx.lineWidth = 1.5;
+
+    const first = segment.points[0];
+    ctx.moveTo(
+      (first.x - camera.x) * zoom + ctx.canvas.width / 2,
+      (first.y - camera.y) * zoom + ctx.canvas.height / 2
+    );
+    for (let i = 1; i < segment.points.length; i++) {
+      const pt = segment.points[i];
+      ctx.lineTo(
+        (pt.x - camera.x) * zoom + ctx.canvas.width / 2,
+        (pt.y - camera.y) * zoom + ctx.canvas.height / 2
+      );
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Draw markers
+    for (const marker of segment.markers) {
+      const sx = (marker.x - camera.x) * zoom + ctx.canvas.width / 2;
+      const sy = (marker.y - camera.y) * zoom + ctx.canvas.height / 2;
+
+      if (marker.type === 'soi-entry') {
+        ctx.beginPath();
+        ctx.arc(sx, sy, 3, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(100, 255, 100, 0.7)';
+        ctx.fill();
+
+      } else if (marker.type === 'soi-exit') {
+        ctx.beginPath();
+        ctx.arc(sx, sy, 3, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255, 180, 50, 0.7)';
+        ctx.fill();
+
+      } else if (marker.type === 'closest-approach') {
+        drawDiamond(ctx, sx, sy, 4, 'rgba(255, 255, 100, 0.6)');
+        ctx.font = '9px "Segoe UI", system-ui, sans-serif';
+        ctx.fillStyle = 'rgba(255, 255, 100, 0.7)';
+        ctx.textAlign = 'left';
+        ctx.fillText(`CA: ${marker.distance}`, sx + 6, sy + 3);
+      }
+    }
+  }
+}
+
+// Draw a maneuver node glyph with four handle lines at its world position
+// node: maneuver node from maneuver.js
+// activeHandle: string name of the currently dragged handle, or null
+export function drawManeuverNode(ctx, camera, node, activeHandle, zoom) {
+  zoom = zoom || 1;
+
+  // Import helpers inline — node world position must be computed by caller and passed,
+  // but here we receive the node directly and compute screen pos from its world position.
+  // We call getNodeWorldPosition-equivalent logic directly here to avoid circular imports.
+  // The actual world position is injected by main.js via nodeWorldPos argument instead.
+  // (This function signature is called with nodeWorldPos injected as node.worldPos)
+  const worldPos = node.worldPos;
+  if (!worldPos) return;
+
+  const sx = (worldPos.x - camera.x) * zoom + ctx.canvas.width / 2;
+  const sy = (worldPos.y - camera.y) * zoom + ctx.canvas.height / 2;
+
+  // Handle world endpoints from node.handlePositions (injected by main.js)
+  const handles = node.handlePositions;
+  if (!handles) return;
+
+  const handleConfigs = [
+    { name: 'prograde',   color: '#44dd66',   brightColor: '#88ffaa' },
+    { name: 'retrograde', color: '#44dd66',   brightColor: '#88ffaa' },
+    { name: 'normal',     color: '#aa44ff',   brightColor: '#cc88ff' },
+    { name: 'radial',     color: '#aa44ff',   brightColor: '#cc88ff' },
+  ];
+
+  for (const cfg of handleConfigs) {
+    const h = handles[cfg.name];
+    if (!h) continue;
+    const hsx = (h.x - camera.x) * zoom + ctx.canvas.width / 2;
+    const hsy = (h.y - camera.y) * zoom + ctx.canvas.height / 2;
+    const isActive = activeHandle === cfg.name;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(hsx, hsy);
+    ctx.strokeStyle = isActive ? cfg.brightColor : cfg.color;
+    ctx.lineWidth = isActive ? 2.5 : 1.5;
+    ctx.setLineDash([]);
+    ctx.stroke();
+    // Handle tip circle
+    ctx.beginPath();
+    ctx.arc(hsx, hsy, isActive ? 5 : 4, 0, Math.PI * 2);
+    ctx.fillStyle = isActive ? cfg.brightColor : cfg.color;
+    ctx.fill();
+  }
+
+  // Node center circle
+  ctx.beginPath();
+  ctx.arc(sx, sy, 6, 0, Math.PI * 2);
+  ctx.strokeStyle = '#ffd700';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(sx, sy, 3, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffd700';
+  ctx.fill();
+
+  // Delta-v label — fixed screen size, no zoom scaling
+  if (node.dvLabel) {
+    ctx.font = '10px "Courier New", monospace';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.textAlign = 'left';
+    ctx.fillText(node.dvLabel, sx + 10, sy - 8);
+  }
+}
+
+// Draw post-burn trajectory as an orange dashed polyline
+// points: array of world-space {x, y} objects
+export function drawPostBurnTrajectory(ctx, camera, segments, zoom) {
+  if (!segments || segments.length === 0) return;
+  zoom = zoom || 1;
+
+  for (const segment of segments) {
+    if (!segment.points || segment.points.length < 2) continue;
+    ctx.beginPath();
+    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = 'rgba(255, 160, 40, 0.5)';
+    ctx.lineWidth = 1.5;
+    const first = segment.points[0];
+    ctx.moveTo(
+      (first.x - camera.x) * zoom + ctx.canvas.width / 2,
+      (first.y - camera.y) * zoom + ctx.canvas.height / 2
+    );
+    for (let i = 1; i < segment.points.length; i++) {
+      const pt = segment.points[i];
+      ctx.lineTo(
+        (pt.x - camera.x) * zoom + ctx.canvas.width / 2,
+        (pt.y - camera.y) * zoom + ctx.canvas.height / 2
+      );
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
 }
 
 export function drawMinimap(minimapCtx, ship, bodies, camera) {

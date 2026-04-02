@@ -48,11 +48,17 @@ export class Input {
     window.addEventListener('mouseup', () => {
       if (this.dragging) {
         this.dragEnd = true;
+        this._wasDragging = true;
       }
       this._mouseDown = false;
       this.dragging = false;
     });
     canvas.addEventListener('click', e => {
+      // Suppress click events that follow a drag
+      if (this._wasDragging) {
+        this._wasDragging = false;
+        return;
+      }
       this.click = true;
       this.clickX = e.clientX;
       this.clickY = e.clientY;
@@ -69,6 +75,7 @@ export class Input {
       case 'm': if (down) this.map = !this.map; break;
       case '.': case '>': if (down) this.warpUp = true; break;
       case ',': case '<': if (down) this.warpDown = true; break;
+      case 'delete': case 'backspace': case 'x': if (down) this.clearNode = true; break;
     }
   }
 
@@ -99,6 +106,14 @@ export class Input {
   consumeWarpDown() {
     if (this.warpDown) {
       this.warpDown = false;
+      return true;
+    }
+    return false;
+  }
+
+  consumeClearNode() {
+    if (this.clearNode) {
+      this.clearNode = false;
       return true;
     }
     return false;

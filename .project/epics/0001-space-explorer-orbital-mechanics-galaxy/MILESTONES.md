@@ -101,6 +101,8 @@ The critical ordering decision: Map/Planning Mode (M3) comes before Landing (M4)
 - [ ] Time warp allows skipping long coast phases (at least 2x, 5x, 10x, 50x)
 - [ ] A Hohmann transfer between two planets can be planned and executed using maneuver nodes
 
+**Linked Feature:** 0003
+
 **Status:** Planned
 
 ---
@@ -131,6 +133,8 @@ The critical ordering decision: Map/Planning Mode (M3) comes before Landing (M4)
 - [ ] Player can launch from a surface back into orbit
 - [ ] Different body types (rocky, gas giant atmosphere, ice) have distinct interaction options
 - [ ] Gas giants cannot be landed on (atmospheric crush boundary)
+
+**Linked Feature:** 0004
 
 **Status:** Planned
 
