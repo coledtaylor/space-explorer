@@ -170,7 +170,7 @@ function loop(timestamp) {
     if (ship.thrustActive) resetWarp();
 
     // Landing update — runs after ship physics, before SOI transition
-    updateLanding(ship, subDt);
+    updateLanding(ship, subDt, input);
 
     // SOI transition check — skip when landed (ship is stationary on surface)
     if (!ship.landed) {
@@ -240,10 +240,10 @@ function update(dt) {
   // Landing zoom — compute target zoom from altitude, lerp toward it each frame
   const ls0 = getLandingState();
   let targetLandingZoom = 1.0;
-  if (!mapMode.isActive() && ls0.body && (ls0.state === 'approach' || ls0.state === 'landed')) {
+  if (!mapMode.isActive() && ls0.body && (ls0.state === 'approach' || ls0.state === 'landed' || ls0.state === 'ascending')) {
     const approachThreshold = ls0.body.radius * LANDING_APPROACH_FACTOR;
     const altitude = Math.max(0, ls0.altitude);
-    // Inverse-altitude curve: zooms in sharply as altitude approaches 0
+    // Inverse-altitude curve: zooms in sharply as altitude approaches 0; zooms out as altitude rises during ascent
     const t = 1 - Math.min(1, altitude / approachThreshold);
     // Exponential curve: t^2 gives more zoom near surface, less during early approach
     targetLandingZoom = 1.0 + (LANDING_ZOOM_MAX - 1.0) * (t * t);
@@ -432,6 +432,25 @@ function update(dt) {
     landingStatus.textContent = 'CRASH';
     landingStatus.className = 'status-crash';
     setTimeout(() => landingHud.classList.add('hidden'), 2000);
+  } else if (ls.state === 'ascending') {
+    landingHud.classList.remove('hidden');
+
+    // Altitude — rising after launch
+    landingAlt.textContent = Math.max(0, Math.round(ls.altitude));
+    landingAlt.className = '';
+
+    // Vertical speed — negative descentRate means climbing
+    const vsAscVal = ls.descentRate;
+    landingVs.textContent = vsAscVal.toFixed(1);
+    landingVs.className = '';
+
+    // Horizontal speed
+    const hsAscVal = ls.horizontalVelocity;
+    landingHs.textContent = hsAscVal.toFixed(1);
+    landingHs.className = '';
+
+    landingStatus.textContent = 'ASCENDING';
+    landingStatus.className = 'status-nominal';
   } else if (ls.state === 'crushed') {
     // Respawn in circular orbit around the parent star
     ship.currentSOIBody = system.star;

@@ -120,6 +120,9 @@ Wire the launch sequence into the game loop and ensure all UI and physics system
 Launch is fully integrated: W key triggers liftoff from landed state, surface panel hides on launch, landing HUD shows during ascent and hides above approach altitude, SOI checks are suppressed while landed and resume on launch, camera zooms out during ascent, player has full flight controls after liftoff, high-gravity bodies cost more fuel than low-gravity ones.
 </done>
 
+**Status:** Complete
+**Completed:** 2026-04-02
+
 ## Verification Checklist
 - [ ] Pressing W while landed initiates liftoff and ship begins moving away from surface
 - [ ] Surface interaction panel hides immediately when launch begins
