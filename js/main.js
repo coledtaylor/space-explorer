@@ -230,7 +230,7 @@ function render() {
 
   // Draw bodies (stars first, then planets, then anomalies)
   const sorted = [...system.bodies].sort((a, b) => {
-    const order = { star: 0, planet: 1, anomaly: 2 };
+    const order = { star: 0, planet: 1, moon: 2, anomaly: 3 };
     return (order[a.kind] || 0) - (order[b.kind] || 0);
   });
   for (const body of sorted) {

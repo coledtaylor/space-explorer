@@ -11,6 +11,8 @@ export function drawBody(ctx, body, camera, time) {
     drawStar(ctx, sx, sy, body, time);
   } else if (body.kind === 'planet') {
     drawPlanet(ctx, sx, sy, body, time);
+  } else if (body.kind === 'moon') {
+    drawMoon(ctx, sx, sy, body);
   } else if (body.kind === 'anomaly') {
     drawAnomaly(ctx, sx, sy, body, time);
   }
@@ -69,6 +71,17 @@ function drawPlanet(ctx, sx, sy, body, time) {
     ctx.lineWidth = 2;
     ctx.stroke();
   }
+}
+
+function drawMoon(ctx, sx, sy, body) {
+  // Simple grey sphere with subtle gradient
+  const grad = ctx.createRadialGradient(sx - body.radius * 0.3, sy - body.radius * 0.3, 0, sx, sy, body.radius);
+  grad.addColorStop(0, lighten(body.color, 30));
+  grad.addColorStop(1, body.color);
+  ctx.beginPath();
+  ctx.arc(sx, sy, body.radius, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
 }
 
 function drawAnomaly(ctx, sx, sy, body, time) {
