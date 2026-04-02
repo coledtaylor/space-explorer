@@ -28,10 +28,19 @@ const ZOOM_MAX = 3.0;
 const ZOOM_LERP_SPEED = 2.0; // fraction of gap closed per second
 
 // Gravity applied to ship each frame during landing sequence (game units / s²)
-// This supplements the body's own mu-based gravity; kept small so players can control descent
+// This is a fallback used only when body.mu is unavailable (anomaly bodies).
+// At KSP scale, real gravity comes from mu/r² and this constant is not exercised.
 const LANDING_GRAVITY = 9.8;
 
-// Ship thrust in landing mode (body-relative, upward)
+// Ship thrust in landing mode (body-relative, upward), in gu/s².
+//
+// KSP-SCALE VERIFICATION (Feature 0006, Phase 5):
+// Surface gravity for all landable body types at max radius:
+//   Rocky    r=900:  g = 5.22M  / 810 000    ≈  6.4 gu/s²
+//   Volcanic r=1000: g = 6.525M / 1 000 000  ≈  6.5 gu/s²
+//   Ice World r=1100: g = 10.44M / 1 210 000 ≈  8.6 gu/s²
+//   Lush/Ocean r=1200: g = 7.83M / 1 440 000 ≈  5.4 gu/s²
+// LANDING_THRUST = 25 exceeds all surface gravities above — players can hover.
 const LANDING_THRUST = 25;
 const LANDING_ROTATION_SPEED = 2.5; // radians per second
 const LANDING_FUEL_RATE = 5; // fuel consumed per second of thrust
@@ -54,6 +63,7 @@ export interface LandingSceneData {
   shipAngle: number;
   shipFuel: number;
   body: PlanetBody | MoonBody;
+  systemSeed: number;
 }
 
 // HUD text objects for the landing display
@@ -76,6 +86,7 @@ export class LandingScene extends Phaser.Scene {
   private shipThrustActive: boolean = false;
 
   private targetBody!: PlanetBody | MoonBody;
+  private systemSeed: number = 0;
   private currentState: LandingState = 'approach';
   private currentTelemetry!: LandingTelemetry;
 
@@ -113,6 +124,7 @@ export class LandingScene extends Phaser.Scene {
     this.shipAngle = data.shipAngle;
     this.shipFuel = data.shipFuel;
     this.targetBody = data.body;
+    this.systemSeed = data.systemSeed;
     this.currentState = 'approach';
     this.zoomLevel = ZOOM_MIN;
     this.outcomeHandled = false;
@@ -498,8 +510,7 @@ export class LandingScene extends Phaser.Scene {
       .setColor('#40c860')
       .setVisible(true);
 
-    // Transition to SurfaceScene — pass body and ship state
-    // SurfaceScene may not exist yet; this will be a no-op until it is registered
+    // Transition to SurfaceScene — pass body, ship state, and system seed for scan deduplication
     this.time.delayedCall(800, () => {
       this.scene.start('SurfaceScene', {
         body: this.targetBody,
@@ -511,7 +522,7 @@ export class LandingScene extends Phaser.Scene {
           angle: this.shipAngle,
           fuel: this.shipFuel,
         },
-        sciencePoints: 0,
+        systemSeed: this.systemSeed,
       });
     });
   }

@@ -4,10 +4,32 @@ import { computeOrbitalElements, gravityAcceleration } from '../lib/orbit';
 import { vec2Mag } from '../lib/utils';
 
 // Physics constants
-const THRUST_POWER = 20;
+//
+// KSP-SCALE TUNING (Feature 0006, Phase 5):
+//
+// At KSP scale orbital velocities are 60-200 gu/s.  A typical Hohmann transfer
+// between adjacent planets (e.g., 80 000 → 160 000 gu) requires roughly 25 gu/s
+// of delta-v per burn (two burns to complete the transfer).
+//
+// Design targets:
+//   • Burns last 10-20 s real-time (not instant, not tediously long)
+//   • Full fuel tank supports ~3-4 interplanetary transfers (≈ 8 individual burns)
+//
+// With THRUST_POWER = 2 gu/s² and FUEL_CONSUMPTION_RATE = 5 units/s:
+//   dv per second of thrust = 2 gu/s
+//   fuel per second of burn  = 5
+//   dv per unit of fuel      = 2 / 5 = 0.4 gu/s per unit
+//
+// INITIAL_FUEL = 500 →  total dv budget = 500 × 0.4 = 200 gu/s
+//   A 25 dv burn takes 25/2 = 12.5 s and costs 12.5 × 5 = 62.5 fuel
+//   200 / 25 = 8 significant burns on a full tank — plenty for 3-4 transfers
+//   plus landing/launch manoeuvres
+//
+// INITIAL_FUEL is exported so FlightScene can reference it instead of a hardcoded literal.
+export const THRUST_POWER = 2;
 const ROTATION_SPEED = 2.5; // radians per second
 const FUEL_CONSUMPTION_RATE = 5;
-const INITIAL_FUEL = 1000;
+export const INITIAL_FUEL = 500;
 
 // Ship color constants
 const SHIP_BODY_COLOR = 0xc0d0e0;

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { Ship } from '../objects/Ship';
+import { Ship, INITIAL_FUEL } from '../objects/Ship';
 import { CelestialBodyRenderer } from '../objects/CelestialBody';
 import { generateSystem, updateBodyPositions } from '../lib/celestial';
 import { checkSOITransition, shipWorldPosition, buildOrbitFromState } from '../lib/physics';
@@ -831,7 +831,7 @@ export class FlightScene extends Phaser.Scene {
 
     // Redraw fuel bar
     this.hudGfx.fuelBar.clear();
-    const fuelFraction = this.ship.fuel / 1000;
+    const fuelFraction = this.ship.fuel / INITIAL_FUEL;
     const barColor = fuelFraction > 0.3 ? HUD_COLOR_FUEL_FULL : HUD_COLOR_FUEL_LOW;
     const barWidth = Math.max(0, HUD_FUEL_BAR_WIDTH * fuelFraction);
     const { height } = this.scale;
