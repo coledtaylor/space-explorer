@@ -6,8 +6,10 @@ import { checkSOITransition, shipWorldPosition, buildOrbitFromState } from '../l
 import { propagateTrajectory } from '../lib/trajectory';
 import { stateFromOrbitalElements } from '../lib/orbit';
 import { seededRandom } from '../lib/utils';
+import { isLandableBody, LANDING_THRESHOLDS } from '../lib/landing.js';
 import type { StarSystem, MassiveBody, ShipState } from '../types/index';
 import type { InputState } from '../objects/Ship';
+import type { LandingSceneData } from './LandingScene';
 
 // Pixels per game-unit at default zoom
 const DEFAULT_ZOOM = 1.0;
@@ -179,6 +181,9 @@ export class FlightScene extends Phaser.Scene {
 
     // Check for SOI transitions
     this._handleSOITransition(shipState);
+
+    // Check if approaching a landable body — hand off to LandingScene
+    if (this._checkLandingApproach(shipState)) return;
 
     // Check for system boundary transition
     this._handleSystemTransition();
@@ -415,6 +420,34 @@ export class FlightScene extends Phaser.Scene {
     this._setCameraCenter(newWorldPos.x, newWorldPos.y);
 
     this.hud.systemLabel.setText(`SEED: ${this.currentSeed}`);
+  }
+
+  // Returns true if a landing approach was triggered (caller should return early from update)
+  private _checkLandingApproach(shipState: ShipState): boolean {
+    const soiBody = this.soiBody;
+
+    // Only trigger for planets and moons with landing capability
+    if (!isLandableBody(soiBody)) return false;
+
+    // Ship position is relative to SOI body center, so distance from origin = distance to body center
+    const distToCenter = Math.sqrt(shipState.pos.x * shipState.pos.x + shipState.pos.y * shipState.pos.y);
+    const altitude = distToCenter - soiBody.radius;
+    const approachThreshold = soiBody.radius * LANDING_THRESHOLDS.APPROACH_FACTOR;
+
+    if (altitude >= approachThreshold) return false;
+
+    // Trigger LandingScene
+    const data: LandingSceneData = {
+      shipX: this.ship.x,
+      shipY: this.ship.y,
+      shipVx: this.ship.vx,
+      shipVy: this.ship.vy,
+      shipAngle: this.ship.angle,
+      shipFuel: this.ship.fuel,
+      body: soiBody,
+    };
+    this.scene.start('LandingScene', data);
+    return true;
   }
 
   private _drawStarfield(timeSec: number): void {

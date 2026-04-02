@@ -89,6 +89,7 @@ Landing physics module compiles with strict TypeScript; all functions are pure a
 ### Task 2: Implement LandingScene with HUD and Transitions
 **Type:** auto
 **Sequence:** 2
+Completed: 2026-04-02
 
 <files>
 src/scenes/LandingScene.ts
