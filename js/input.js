@@ -9,11 +9,11 @@ export class Input {
     this.click = false;
     this.mouseX = 0;
     this.mouseY = 0;
-    this.aimAngle = 0;
 
     window.addEventListener('keydown', e => this.onKey(e, true));
     window.addEventListener('keyup', e => this.onKey(e, false));
-    canvas.addEventListener('mousemove', e => {
+    // Use window so mouse position stays current even when hovering over UI elements
+    window.addEventListener('mousemove', e => {
       this.mouseX = e.clientX;
       this.mouseY = e.clientY;
     });
@@ -33,12 +33,6 @@ export class Input {
       case 'e': if (down) this.interact = true; break;
       case 'm': if (down) this.map = !this.map; break;
     }
-  }
-
-  updateAim(shipScreenX, shipScreenY) {
-    const dx = this.mouseX - shipScreenX;
-    const dy = this.mouseY - shipScreenY;
-    this.aimAngle = Math.atan2(dy, dx) + Math.PI / 2;
   }
 
   consumeClick() {

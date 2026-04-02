@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Celestial Tests</title>
+  <style>
+    body { font-family: monospace; background: #111; color: #eee; padding: 2em; }
+    h1 { color: #4fc3f7; }
+    h2 { color: #90caf9; margin-top: 1.5em; }
+    .pass { color: #81c784; }
+    .fail { color: #e57373; }
+    .label { color: #aaa; }
+    .summary { font-size: 1.2em; margin-top: 2em; border-top: 1px solid #333; padding-top: 1em; }
+  </style>
+</head>
+<body>
+  <h1>Keplerian Orbital Motion — End-to-End Verification</h1>
+  <div id="results"></div>
+  <div id="summary" class="summary"></div>
+
+  <script type="module">
+    import { generateSystem, updateBodyPositions } from '../js/celestial.js';
+
+    const results = document.getElementById('results');
+    const summary = document.getElementById('summary');
+
+    let passCount = 0;
+    let failCount = 0;
+
+    function assert(label, condition, details) {
+      const el = document.createElement('div');
+      el.innerHTML = condition
+        ? `<span class="pass">PASS</span> <span class="label">${label}</span>${details ? ' — ' + details : ''}`
+        : `<span class="fail">FAIL</span> <span class="label">${label}</span>${details ? ' — ' + details : ''}`;
+      results.appendChild(el);
+      if (condition) passCount++; else failCount++;
+    }
+
+    function section(title) {
+      const el = document.createElement('h2');
+      el.textContent = title;
+      results.appendChild(el);
+    }
+
+    // -----------------------------------------------------------------------
+    // Check 1: Structure — generateSystem(42) returns { star, planets, bodies }
+    // -----------------------------------------------------------------------
+    section('Check 1: Return Structure');
+    const sys = generateSystem(42);
+    assert('Has "star" property', sys.star !== undefined, `type: ${typeof sys.star}`);
+    assert('Has "planets" property', Array.isArray(sys.planets), `isArray: ${Array.isArray(sys.planets)}, length: ${sys.planets ? sys.planets.length : 'N/A'}`);
+    assert('Has "bodies" property', Array.isArray(sys.bodies), `isArray: ${Array.isArray(sys.bodies)}, length: ${sys.bodies ? sys.bodies.length : 'N/A'}`);
+    assert('"bodies" contains "star"', sys.bodies.includes(sys.star), '');
+    assert('"bodies" contains all planets', sys.planets.every(p => sys.bodies.includes(p)), '');
+
+    // -----------------------------------------------------------------------
+    // Check 2: Star physical properties
+    // -----------------------------------------------------------------------
+    section('Check 2: Star Physical Properties');
+    const star = sys.star;
+    assert('star.mass is a positive number', typeof star.mass === 'number' && star.mass > 0, `mass = ${star.mass?.toExponential(3)}`);
+    assert('star.mu is a positive number', typeof star.mu === 'number' && star.mu > 0, `mu = ${star.mu?.toExponential(3)}`);
+    assert('star.soiRadius is a positive number', typeof star.soiRadius === 'number' && star.soiRadius > 0, `soiRadius = ${star.soiRadius?.toExponential(3)}`);
+
+    // -----------------------------------------------------------------------
+    // Check 3: Planet physical properties
+    // -----------------------------------------------------------------------
+    section('Check 3: Planet Physical Properties');
+    let allHaveMass = true;
+    let allHaveMu = true;
+    let allHaveSOI = true;
+    let allHaveParent = true;
+    let allHaveOrbElements = true;
+
+    for (const planet of sys.planets) {
+      if (typeof planet.mass !== 'number' || planet.mass <= 0) allHaveMass = false;
+      if (typeof planet.mu !== 'number' || planet.mu <= 0) allHaveMu = false;
+      if (typeof planet.soiRadius !== 'number' || planet.soiRadius <= 0) allHaveSOI = false;
+      if (!planet.parentBody) allHaveParent = false;
+      const oe = planet.orbitalElements;
+      if (!oe || typeof oe.a !== 'number' || typeof oe.e !== 'number' ||
+          typeof oe.omega !== 'number' || typeof oe.nu0 !== 'number') {
+        allHaveOrbElements = false;
+      }
+    }
+
+    assert('All planets have positive mass', allHaveMass, `planets: ${sys.planets.length}`);
+    assert('All planets have positive mu', allHaveMu, '');
+    assert('All planets have positive soiRadius', allHaveSOI, '');
+    assert('All planets have parentBody', allHaveParent, '');
+    assert('All planets have orbitalElements with a, e, omega, nu0', allHaveOrbElements, '');
+
+    // -----------------------------------------------------------------------
+    // Check 4: SOI reasonableness
+    // -----------------------------------------------------------------------
+    section('Check 4: SOI Reasonableness');
+    let allSOIPositive = sys.planets.every(p => p.soiRadius > 0);
+    let allSOILessThanStar = sys.planets.every(p => p.soiRadius < star.soiRadius);
+    assert('All planet SOI values are positive', allSOIPositive, '');
+    assert('All planet SOI values are less than star SOI', allSOILessThanStar,
+      `star.soiRadius = ${star.soiRadius.toExponential(3)}, max planet SOI = ${Math.max(...sys.planets.map(p => p.soiRadius)).toExponential(3)}`);
+
+    // -----------------------------------------------------------------------
+    // Check 5: Eccentricity range [0, 0.15]
+    // -----------------------------------------------------------------------
+    section('Check 5: Eccentricity Range');
+    let eMin = Infinity, eMax = -Infinity;
+    for (const planet of sys.planets) {
+      const e = planet.orbitalElements.e;
+      if (e < eMin) eMin = e;
+      if (e > eMax) eMax = e;
+    }
+    assert('All planet eccentricities >= 0', eMin >= 0, `min e = ${eMin.toFixed(6)}`);
+    assert('All planet eccentricities <= 0.15', eMax <= 0.15, `max e = ${eMax.toFixed(6)}`);
+
+    // -----------------------------------------------------------------------
+    // Check 6: Orbital period round-trip
+    // -----------------------------------------------------------------------
+    section('Check 6: Orbital Period Round-Trip');
+
+    // Regenerate to reset module-level elapsedTime to 0
+    const sys6 = generateSystem(42);
+
+    // Find innermost planet (smallest semi-major axis a)
+    const innermost = sys6.planets.reduce((best, p) =>
+      p.orbitalElements.a < best.orbitalElements.a ? p : best
+    );
+
+    const a = innermost.orbitalElements.a;
+    const mu_star = sys6.star.mu;
+
+    // Orbital period T = 2 * PI * sqrt(a^3 / mu_star)
+    const T = 2 * Math.PI * Math.sqrt(a * a * a / mu_star);
+
+    const x0 = innermost.x;
+    const y0 = innermost.y;
+
+    const steps = 1000;
+    const dt = T / steps;
+
+    for (let i = 0; i < steps; i++) {
+      updateBodyPositions(sys6, dt);
+    }
+
+    const xFinal = innermost.x;
+    const yFinal = innermost.y;
+
+    const dx = xFinal - x0;
+    const dy = yFinal - y0;
+    const posError = Math.sqrt(dx * dx + dy * dy);
+    const tolerance = 0.01 * a; // 1% of orbital radius
+
+    assert(
+      'Innermost planet returns to start after one period (within 1% of a)',
+      posError < tolerance,
+      `error = ${posError.toExponential(4)}, tolerance = ${tolerance.toExponential(4)}, a = ${a.toExponential(4)}, T = ${T.toExponential(4)} s`
+    );
+
+    // -----------------------------------------------------------------------
+    // Check 7: Determinism
+    // -----------------------------------------------------------------------
+    section('Check 7: Determinism');
+    const sysA = generateSystem(42);
+    const sysB = generateSystem(42);
+
+    const starMatch =
+      sysA.star.mass === sysB.star.mass &&
+      sysA.star.mu === sysB.star.mu &&
+      sysA.star.soiRadius === sysB.star.soiRadius &&
+      sysA.star.name === sysB.star.name &&
+      sysA.star.subtype === sysB.star.subtype;
+
+    assert('Star properties match across two generateSystem(42) calls', starMatch,
+      `A.name=${sysA.star.name}, B.name=${sysB.star.name}`);
+
+    let planetsMatch = sysA.planets.length === sysB.planets.length;
+    if (planetsMatch) {
+      for (let i = 0; i < sysA.planets.length; i++) {
+        const pa = sysA.planets[i];
+        const pb = sysB.planets[i];
+        if (pa.mass !== pb.mass || pa.mu !== pb.mu ||
+            pa.orbitalElements.a !== pb.orbitalElements.a ||
+            pa.orbitalElements.e !== pb.orbitalElements.e ||
+            pa.orbitalElements.omega !== pb.orbitalElements.omega ||
+            pa.orbitalElements.nu0 !== pb.orbitalElements.nu0) {
+          planetsMatch = false;
+          break;
+        }
+      }
+    }
+    assert(`Planet count and properties match across two generateSystem(42) calls`, planetsMatch,
+      `A.count=${sysA.planets.length}, B.count=${sysB.planets.length}`);
+
+    // -----------------------------------------------------------------------
+    // Check 8: No old properties
+    // -----------------------------------------------------------------------
+    section('Check 8: No Old Properties (orbitAngle, orbitSpeed, orbitRadius)');
+    let noOldProps = true;
+    const oldPropNames = ['orbitAngle', 'orbitSpeed', 'orbitRadius'];
+    for (const planet of sys.planets) {
+      for (const prop of oldPropNames) {
+        if (prop in planet) {
+          noOldProps = false;
+          break;
+        }
+      }
+    }
+    assert('No planet has orbitAngle, orbitSpeed, or orbitRadius', noOldProps,
+      `checked ${sys.planets.length} planets`);
+
+    // -----------------------------------------------------------------------
+    // Summary
+    // -----------------------------------------------------------------------
+    const total = passCount + failCount;
+    summary.innerHTML = `<strong>Results: <span class="${failCount === 0 ? 'pass' : 'fail'}">${passCount}/${total} PASS</span></strong>` +
+      (failCount > 0 ? ` — <span class="fail">${failCount} FAILED</span>` : '');
+  </script>
+</body>
+</html>

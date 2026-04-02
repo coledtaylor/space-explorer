@@ -103,6 +103,8 @@ Remove the old `updateOrbits` export. Do not reference `orbitAngle`, `orbitSpeed
 ### Task 2: Verify Keplerian orbital motion end-to-end
 **Type:** auto
 **Sequence:** 2
+**Status:** Complete
+Completed: 2026-04-01
 
 <files>
 js/celestial.js

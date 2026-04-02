@@ -98,14 +98,6 @@ function loop(timestamp) {
 }
 
 function update(dt) {
-  // Compute world position for camera aim update
-  const worldPos = shipWorldPosition(ship, system);
-
-  // Update aim using world-space ship position
-  const shipScreenX = worldPos.x - camera.x + canvas.width / 2;
-  const shipScreenY = worldPos.y - camera.y + canvas.height / 2;
-  input.updateAim(shipScreenX, shipScreenY);
-
   updateBodyPositions(system, dt);
   ship.update(dt, input, ship.currentSOIBody);
 
@@ -118,6 +110,15 @@ function update(dt) {
   // Camera follows ship world-space position smoothly
   camera.x += (wp.x - camera.x) * 0.08;
   camera.y += (wp.y - camera.y) * 0.08;
+
+  // Point ship at mouse. Compute ship screen position using the now-updated camera —
+  // the same camera render() will use — so both coordinate spaces match exactly.
+  // Mouse is stored in clientX/Y (CSS viewport pixels). For a full-screen canvas at
+  // (0,0) with no CSS scaling the canvas pixel grid equals the viewport CSS pixel grid,
+  // so no conversion is needed.
+  const shipScreenX = wp.x - camera.x + canvas.width / 2;
+  const shipScreenY = wp.y - camera.y + canvas.height / 2;
+  ship.angle = Math.atan2(input.mouseY - shipScreenY, input.mouseX - shipScreenX) + Math.PI / 2;
 
   // HUD
   coordsDisplay.textContent = `x: ${Math.round(wp.x)}  y: ${Math.round(wp.y)}`;
@@ -187,7 +188,7 @@ function update(dt) {
   }
 
   // System transition — use world-space distance from star (origin)
-  if (dist(wp.x, wp.y, 0, 0) > 2000) {
+  if (dist(wp.x, wp.y, 0, 0) > 4000) {
     currentSystemSeed += 1;
     system = generateSystem(currentSystemSeed);
     ship.currentSOIBody = system.star;

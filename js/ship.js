@@ -11,16 +11,13 @@ export class Ship {
     this.vx = 0;
     this.vy = 0;
     this.angle = 0;
-    this.fuel = 100;
+    this.fuel = 1000;
     this.thrustActive = false;
     this.currentSOIBody = null;
     this.orbit = { a: 0, e: 0, omega: 0, nu: 0, T: 0, apoapsis: 0, periapsis: 0, altitude: 0 };
   }
 
   update(dt, input, currentSOIBody) {
-    // Heading from mouse aim
-    this.angle = input.aimAngle;
-
     // Gravity — ship pos is relative to SOI body, so body is at origin
     const grav = gravityAcceleration({ x: this.x, y: this.y }, { x: 0, y: 0 }, currentSOIBody.mu);
     this.vx += grav.x * dt;

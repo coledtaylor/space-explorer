@@ -1,5 +1,5 @@
 import { seededRandom, hslToRgb } from './utils.js';
-import { G, AU } from './units.js';
+import { G } from './units.js';
 import { computeSOIRadius, trueAnomalyAtTime, stateFromOrbitalElements } from './orbit.js';
 
 const PLANET_NAMES = [
@@ -23,27 +23,27 @@ const ANOMALY_NAMES = [
 const PLANET_TYPES = ['Rocky', 'Gas Giant', 'Ice World', 'Ocean World', 'Desert', 'Volcanic', 'Lush'];
 const STAR_TYPES = ['Red Dwarf', 'Yellow Star', 'Blue Giant', 'White Dwarf', 'Neutron Star'];
 
-// Solar mass in kg
-const SOLAR_MASS = 1.989e30;
-// Earth mass in kg
-const EARTH_MASS = 5.972e24;
-
+// Game-scale masses (tuned for playable orbital mechanics)
+// With G=1, star.mu = star.mass, so circular velocity at r is sqrt(mass/r)
+// Yellow Star mass=50000 at r=400 gives v=sqrt(125)≈11 gu/s, T≈228s (~4min)
 const STAR_MASSES = {
-  'Red Dwarf': 0.3 * SOLAR_MASS,
-  'Yellow Star': 1.0 * SOLAR_MASS,
-  'Blue Giant': 10.0 * SOLAR_MASS,
-  'White Dwarf': 0.6 * SOLAR_MASS,
-  'Neutron Star': 1.5 * SOLAR_MASS,
+  'Red Dwarf': 15000,
+  'Yellow Star': 50000,
+  'Blue Giant': 500000,
+  'White Dwarf': 30000,
+  'Neutron Star': 75000,
 };
 
+// Planet masses — large enough for meaningful SOI radii
+// SOI = r * (m_planet/m_star)^0.4
 const PLANET_MASSES = {
-  'Rocky': 1.0 * EARTH_MASS,
-  'Gas Giant': 300.0 * EARTH_MASS,
-  'Ice World': 15.0 * EARTH_MASS,
-  'Ocean World': 2.0 * EARTH_MASS,
-  'Desert': 0.8 * EARTH_MASS,
-  'Volcanic': 1.1 * EARTH_MASS,
-  'Lush': 1.5 * EARTH_MASS,
+  'Rocky': 500,
+  'Gas Giant': 10000,
+  'Ice World': 2000,
+  'Ocean World': 700,
+  'Desert': 400,
+  'Volcanic': 550,
+  'Lush': 800,
 };
 
 // Module-level elapsed time accumulator for orbit propagation
@@ -70,7 +70,7 @@ export function generateSystem(seed) {
     radius: starSizes[starType],
     mass: starMass,
     mu: G * starMass,
-    soiRadius: 100 * AU,
+    soiRadius: 5000,
     color: `rgb(${r},${g},${b})`,
     glowColor: `rgba(${r},${g},${b},0.15)`,
     hue,
@@ -86,8 +86,8 @@ export function generateSystem(seed) {
   const planetCount = 3 + Math.floor(rng() * 5);
   const planets = [];
 
-  // Start ~0.3 AU, increase with Titius-Bode-like spacing
-  let orbitalRadius = (0.3 + rng() * 0.2) * AU;
+  // Start 200-300 game units, increase with Titius-Bode-like spacing
+  let orbitalRadius = 200 + rng() * 100;
   for (let i = 0; i < planetCount; i++) {
     const typeIdx = Math.floor(rng() * PLANET_TYPES.length);
     const pType = PLANET_TYPES[typeIdx];

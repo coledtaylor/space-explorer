@@ -1,13 +1,19 @@
 // Unit system documentation:
-// 1 game unit = 1 km
-// Mass is expressed in kg
-// Time is expressed in seconds (real-time dt from requestAnimationFrame)
+// Game-scale units designed for playable orbital mechanics on a canvas.
+// 1 game unit ≈ 1 pixel at default zoom
+// Mass in game mass units (tuned so orbital velocities are ~5-30 gu/s)
+// Time in seconds (real-time dt from requestAnimationFrame)
+//
+// This is NOT SI. G=1 and masses are chosen so that:
+// - Orbital radii are 200-1200 game units (visible on screen)
+// - Circular velocities are 5-30 game units/s (smooth movement)
+// - Orbital periods are 30s-5min (fun gameplay pace)
 
-// Gravitational constant scaled to game units (km^3 kg^-1 s^-2)
-export const G = 6.674e-11;
+// Gravitational constant (game units)
+export const G = 1;
 
-// 1 AU in game units (km)
-export const AU = 1.496e8;
+// 1 AU in game units (reference only — orbital radii are set directly)
+export const AU = 1000;
 
-// Render scale factor for canvas (game units per pixel) — tune as needed
+// Render scale factor (pixels per game unit)
 export const SCALE = 1.0;
