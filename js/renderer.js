@@ -456,6 +456,71 @@ export function drawOrbitPath(ctx, camera, orbitalElements, soiBody, zoom) {
   }
 }
 
+// Draw all body orbital ellipses (planets around star, moons around planets)
+export function drawBodyOrbits(ctx, bodies, camera, zoom) {
+  zoom = zoom || 1;
+
+  for (const body of bodies) {
+    if (!body.orbitalElements || !body.parentBody) continue;
+    if (body.kind === 'anomaly') continue;
+
+    const { a, e, omega } = body.orbitalElements;
+    if (a === undefined || e === undefined || omega === undefined) continue;
+
+    // Screen-space semi-major axis — skip if sub-pixel
+    const screenA = a * zoom;
+    if (screenA < 5) continue;
+
+    const parent = body.parentBody;
+    const focusSx = (parent.x - camera.x) * zoom + ctx.canvas.width / 2;
+    const focusSy = (parent.y - camera.y) * zoom + ctx.canvas.height / 2;
+
+    const isMoon = body.kind === 'moon';
+    const orbitColor = isMoon ? 'rgba(100, 140, 180, 0.08)' : 'rgba(100, 140, 180, 0.15)';
+    const lineWidth = isMoon ? 0.5 : 1;
+
+    const b = a * Math.sqrt(1 - e * e);
+    const c = a * e; // focus offset from ellipse center
+
+    const cosO = Math.cos(omega);
+    const sinO = Math.sin(omega);
+
+    const steps = 72;
+    ctx.beginPath();
+    ctx.setLineDash([]);
+    ctx.strokeStyle = orbitColor;
+    ctx.lineWidth = lineWidth;
+
+    for (let i = 0; i <= steps; i++) {
+      const theta = (i / steps) * Math.PI * 2;
+      const xE = a * Math.cos(theta) - c;
+      const yE = b * Math.sin(theta);
+      const sx = focusSx + (cosO * xE - sinO * yE) * zoom;
+      const sy = focusSy + (sinO * xE + cosO * yE) * zoom;
+      if (i === 0) {
+        ctx.moveTo(sx, sy);
+      } else {
+        ctx.lineTo(sx, sy);
+      }
+    }
+    ctx.closePath();
+    ctx.stroke();
+
+    // Periapsis marker (theta=0 in ellipse frame, body side: xE = a - c = a*(1-e))
+    const pxE = a * (1 - e);
+    const periSx = focusSx + cosO * pxE * zoom;
+    const periSy = focusSy + sinO * pxE * zoom;
+    const markerColor = isMoon ? 'rgba(100, 140, 180, 0.25)' : 'rgba(100, 140, 180, 0.45)';
+    drawDiamond(ctx, periSx, periSy, 3, markerColor);
+
+    // Apoapsis marker (theta=PI in ellipse frame: xE = -a - c = -a*(1+e))
+    const axE = -a * (1 + e);
+    const apoSx = focusSx + cosO * axE * zoom;
+    const apoSy = focusSy + sinO * axE * zoom;
+    drawDiamond(ctx, apoSx, apoSy, 3, markerColor);
+  }
+}
+
 function drawDiamond(ctx, sx, sy, size, color) {
   ctx.beginPath();
   ctx.moveTo(sx, sy - size);
