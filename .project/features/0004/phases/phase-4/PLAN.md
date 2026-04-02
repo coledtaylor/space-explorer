@@ -81,6 +81,9 @@ The landing state machine from Phase 1 likely has states like `inactive`, `appro
 Launch mechanics exist: landed state can transition to ascending via thrust input, fuel cost scales with surface gravity, ship physics freeze while landed and resume on launch, ascending state returns to inactive above approach altitude.
 </done>
 
+**Status:** Complete
+**Completed:** 2026-04-02
+
 ### Task 2: Wire launch into game loop — panel dismissal, HUD, SOI guard
 **Type:** auto
 **Sequence:** 2

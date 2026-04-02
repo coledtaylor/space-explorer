@@ -6,6 +6,10 @@ const SAFE_HORIZONTAL_VEL = 4;     // gu/s — max horizontal velocity for soft 
 const APPROACH_FACTOR = 3;         // approach threshold = body.radius * APPROACH_FACTOR
 const CRUSH_FACTOR = 0.5;          // crush threshold = body.radius * CRUSH_FACTOR
 
+// Launch constants
+const BASELINE_GRAVITY = 1.0;      // gravity baseline for fuel multiplier normalization
+const LAUNCH_IMPULSE = 10;         // gu/s — initial upward velocity impulse on launch
+
 // Module-level state
 let _state = 'inactive';
 let _altitude = 0;
@@ -28,7 +32,7 @@ function isLandableKind(body) {
   return body.kind === 'planet' || body.kind === 'moon';
 }
 
-export function updateLanding(ship, dt) {
+export function updateLanding(ship, dt, input) {
   const body = ship.currentSOIBody;
 
   // No SOI body or not a landable kind — go inactive
@@ -38,8 +42,25 @@ export function updateLanding(ship, dt) {
     return _state;
   }
 
-  // Terminal states — stay until reset
-  if (_state === 'landed' || _state === 'crashed' || _state === 'crushed') {
+  // Terminal states — stay until reset (crashed/crushed), or handle landed/ascending below
+  if (_state === 'crashed' || _state === 'crushed') {
+    return _state;
+  }
+
+  // Landed: check for launch input
+  if (_state === 'landed') {
+    if (input && input.up && ship.fuel > 0) {
+      // Initiate launch — compute surface normal (radial outward from body center)
+      const dist = vec2Mag({ x: ship.x, y: ship.y });
+      const normalX = dist > 0 ? ship.x / dist : 0;
+      const normalY = dist > 0 ? ship.y / dist : -1;
+      // Apply upward impulse along surface normal
+      ship.vx = normalX * LAUNCH_IMPULSE;
+      ship.vy = normalY * LAUNCH_IMPULSE;
+      // Clear landed flag so physics resume in ship.update()
+      ship.landed = false;
+      _state = 'ascending';
+    }
     return _state;
   }
 
@@ -75,6 +96,15 @@ export function updateLanding(ship, dt) {
 
   const approachThreshold = body.radius * APPROACH_FACTOR;
   const crushThreshold = body.radius * CRUSH_FACTOR;
+
+  if (_state === 'ascending') {
+    // Return to inactive once ship climbs above approach altitude
+    if (altitude >= approachThreshold || speed >= escapeVel) {
+      _state = 'inactive';
+      _body = null;
+    }
+    return _state;
+  }
 
   if (_state === 'inactive') {
     // Transition to approach when close enough and below escape velocity
@@ -119,6 +149,14 @@ export function updateLanding(ship, dt) {
   }
 
   return _state;
+}
+
+// Returns fuel cost multiplier for launch thrust based on surface gravity.
+// Normalized against BASELINE_GRAVITY so bodies with higher gravity cost proportionally more.
+export function getLaunchFuelMultiplier(body) {
+  if (!body || !body.mu || !body.radius) return 1;
+  const surfaceGravity = body.mu / (body.radius * body.radius);
+  return Math.max(1, surfaceGravity / BASELINE_GRAVITY);
 }
 
 export function getLandingState() {

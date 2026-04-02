@@ -1,5 +1,6 @@
 import { computeOrbitalElements, gravityAcceleration } from './orbit.js';
 import { vec2Mag } from './utils.js';
+import { getLaunchFuelMultiplier } from './landing.js';
 
 const THRUST_POWER = 20;
 const FUEL_CONSUMPTION_RATE = 5;
@@ -19,7 +20,7 @@ export class Ship {
     this.orbit = { a: 0, e: 0, omega: 0, nu: 0, T: 0, apoapsis: 0, periapsis: 0, altitude: 0 };
   }
 
-  update(dt, input, currentSOIBody) {
+  update(dt, input, currentSOIBody, landingState) {
     // When landed, skip gravity/thrust/integration — ship is stationary on surface
     // Angle updates still run so the player can orient for launch
     if (this.landed) {
@@ -47,6 +48,11 @@ export class Ship {
     this.vx += grav.x * dt;
     this.vy += grav.y * dt;
 
+    // Fuel multiplier — higher on ascending from heavy bodies
+    const fuelMultiplier = (landingState === 'ascending')
+      ? getLaunchFuelMultiplier(currentSOIBody)
+      : 1;
+
     // Thrust
     this.thrustActive = false;
     if (this.fuel > 0) {
@@ -54,13 +60,13 @@ export class Ship {
         // Prograde: thrust along heading direction
         this.vx += Math.sin(this.angle) * THRUST_POWER * dt;
         this.vy += -Math.cos(this.angle) * THRUST_POWER * dt;
-        this.fuel = Math.max(0, this.fuel - FUEL_CONSUMPTION_RATE * dt);
+        this.fuel = Math.max(0, this.fuel - FUEL_CONSUMPTION_RATE * fuelMultiplier * dt);
         this.thrustActive = true;
       } else if (input.down) {
         // Retrograde: thrust opposite to heading
         this.vx -= Math.sin(this.angle) * THRUST_POWER * dt;
         this.vy -= -Math.cos(this.angle) * THRUST_POWER * dt;
-        this.fuel = Math.max(0, this.fuel - FUEL_CONSUMPTION_RATE * dt);
+        this.fuel = Math.max(0, this.fuel - FUEL_CONSUMPTION_RATE * fuelMultiplier * dt);
         this.thrustActive = true;
       }
     }
