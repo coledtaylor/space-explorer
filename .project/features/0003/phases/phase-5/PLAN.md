@@ -87,6 +87,8 @@ Modify `js/input.js` to add warp key bindings. Use period (`.` / `>`) to increas
 ### Task 2: Integrate time warp into game loop and HUD
 **Type:** auto
 **Sequence:** 2
+**Status:** Complete
+Completed: 2026-04-01
 
 <files>
 js/main.js
@@ -135,15 +137,15 @@ Time warp is fully functional: key presses cycle through 1x/2x/5x/10x/50x, HUD s
 ## Verification Checklist
 - [x] `js/timewarp.js` exists with `WARP_STEPS`, `getWarpRate`, `increaseWarp`, `decreaseWarp`, `resetWarp` exports
 - [x] `js/input.js` handles `.`/`,` keys with consume pattern
-- [ ] `index.html` has `#warp-display` in HUD
-- [ ] `css/style.css` has warp display styling matching HUD aesthetic
-- [ ] `js/main.js` imports and wires timewarp + input consume methods
-- [ ] Sub-stepping prevents physics explosions at 50x warp (max 0.05s per sub-step)
-- [ ] Pressing `.` increases warp through discrete steps, pressing `,` decreases
-- [ ] HUD shows current warp rate, visually prominent when > 1x
-- [ ] Applying thrust (W/S) auto-drops warp to 1x
-- [ ] SOI transition auto-drops warp to 1x
-- [ ] Game remains stable during extended 50x warp (no NaN positions, no missed transitions)
+- [x] `index.html` has `#warp-display` in HUD
+- [x] `css/style.css` has warp display styling matching HUD aesthetic
+- [x] `js/main.js` imports and wires timewarp + input consume methods
+- [x] Sub-stepping prevents physics explosions at 50x warp (max 0.05s per sub-step)
+- [x] Pressing `.` increases warp through discrete steps, pressing `,` decreases
+- [x] HUD shows current warp rate, visually prominent when > 1x
+- [x] Applying thrust (W/S) auto-drops warp to 1x
+- [x] SOI transition auto-drops warp to 1x
+- [x] Game remains stable during extended 50x warp (no NaN positions, no missed transitions)
 
 ## Success Criteria
 Player can press `.` to increase time warp through 1x/2x/5x/10x/50x steps and `,` to decrease. The warp rate is visible in the HUD. Bodies orbit and the ship coasts at the accelerated rate. Warp automatically resets to 1x when thrust is applied or an SOI transition occurs. The simulation is stable at all warp rates with no physics explosions.

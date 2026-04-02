@@ -17,6 +17,7 @@
       <div id="hud-right">
         <span id="fuel-display">Fuel: 100%</span>
         <span id="speed-display">Speed: 0</span>
+        <span id="warp-display" class="hidden">WARP 1x</span>
       </div>
     </div>
     <div id="minimap">
@@ -43,6 +44,12 @@
       <div class="orbit-row"><span class="orbit-label">T</span><span id="period-display">0</span><span class="orbit-unit">s</span></div>
       <div class="orbit-row"><span class="orbit-label">ECC</span><span id="ecc-display">0</span></div>
       <div class="orbit-row"><span class="orbit-label">SOI</span><span id="soi-display">Star</span></div>
+    </div>
+    <div id="maneuver-info" class="hidden">
+      <div class="maneuver-row">
+        <span class="maneuver-label">DV</span>
+        <span id="maneuver-dv" class="maneuver-value">0.0 m/s</span>
+      </div>
     </div>
     <div id="scan-panel" class="hidden">
       <button id="scan-close">&times;</button>

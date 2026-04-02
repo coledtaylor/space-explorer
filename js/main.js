@@ -2,10 +2,22 @@ import { Ship } from './ship.js';
 import { Input } from './input.js';
 import { Starfield } from './starfield.js';
 import { generateSystem, updateBodyPositions } from './celestial.js';
-import { drawBody, drawMinimap, setCameraHack, drawOrbitPath, drawBodyOrbits } from './renderer.js';
+import { drawBody, drawMinimap, setCameraHack, drawOrbitPath, drawBodyOrbits, drawTrajectory, drawManeuverNode, drawPostBurnTrajectory } from './renderer.js';
+import { propagateTrajectory } from './trajectory.js';
 import { checkSOITransition, shipWorldPosition } from './physics.js';
 import { dist } from './utils.js';
 import { MapMode } from './mapmode.js';
+import { getWarpRate, increaseWarp, decreaseWarp, resetWarp } from './timewarp.js';
+import {
+  createManeuverNode,
+  getNodeWorldPosition,
+  getHandlePositions,
+  hitTestHandles,
+  updateBurnFromDrag,
+  getPostBurnState,
+  getManeuverDeltaV,
+  maneuverNodes,
+} from './maneuver.js';
 
 const canvas = document.getElementById('game-canvas');
 const ctx = canvas.getContext('2d');
@@ -32,9 +44,12 @@ const mapIndicator = document.getElementById('map-indicator');
 const coordsDisplay = document.getElementById('coords-display');
 const fuelDisplay = document.getElementById('fuel-display');
 const speedDisplay = document.getElementById('speed-display');
+const warpDisplay = document.getElementById('warp-display');
 const hud = document.getElementById('hud');
 const minimap = document.getElementById('minimap');
 const orbitHud = document.getElementById('orbit-hud');
+const maneuverInfo = document.getElementById('maneuver-info');
+const maneuverDvDisplay = document.getElementById('maneuver-dv');
 
 // Orbital HUD elements
 const altDisplay = document.getElementById('alt-display');
@@ -48,6 +63,11 @@ const soiDisplay = document.getElementById('soi-display');
 let running = false;
 let time = 0;
 let prevMapState = false;
+
+// Maneuver node drag state
+let activeManeuverHandle = null;
+let prevDragX = 0;
+let prevDragY = 0;
 
 const input = new Input(canvas);
 const starfield = new Starfield();
@@ -99,7 +119,39 @@ function loop(timestamp) {
   if (!running) return;
   const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
   lastTime = timestamp;
-  time += dt;
+
+  // Consume warp key presses once per frame (before sub-stepping)
+  if (input.consumeWarpUp()) increaseWarp();
+  if (input.consumeWarpDown()) decreaseWarp();
+
+  // Compute effective dt with warp and divide into stable sub-steps
+  const warpRate = getWarpRate();
+  const effectiveDt = dt * warpRate;
+  const MAX_SUB_DT = 0.05;
+  const steps = Math.ceil(effectiveDt / MAX_SUB_DT);
+  const subDt = effectiveDt / steps;
+
+  for (let i = 0; i < steps; i++) {
+    time += subDt;
+    updateBodyPositions(system, subDt);
+    ship.update(subDt, input, ship.currentSOIBody);
+
+    // Auto-drop warp on thrust
+    if (ship.thrustActive) resetWarp();
+
+    // SOI transition check — must happen after both ship and body positions are updated
+    const transition = checkSOITransition(ship, system);
+    if (transition) resetWarp();
+  }
+
+  // Update warp HUD
+  const currentWarpRate = getWarpRate();
+  if (currentWarpRate > 1) {
+    warpDisplay.textContent = 'WARP ' + currentWarpRate + 'x';
+    warpDisplay.classList.remove('hidden');
+  } else {
+    warpDisplay.classList.add('hidden');
+  }
 
   update(dt);
   render();
@@ -123,12 +175,6 @@ function update(dt) {
       mapIndicator.classList.add('hidden');
     }
   }
-
-  updateBodyPositions(system, dt);
-  ship.update(dt, input, ship.currentSOIBody);
-
-  // SOI transition check — must happen after both ship and body positions are updated
-  checkSOITransition(ship, system);
 
   // Recompute world position after possible transition
   const wp = shipWorldPosition(ship, system);
@@ -195,6 +241,109 @@ function update(dt) {
         break;
       }
     }
+  }
+
+  // Map mode maneuver node interaction
+  if (mapMode.isActive()) {
+    const zoom = mapMode.getZoom();
+    const mapCam = mapMode.getCamera();
+
+    // Handle drag for maneuver node handles
+    const dragState = input.getDragState();
+    if (dragState.dragging && activeManeuverHandle && maneuverNodes[0]) {
+      // Convert pixel delta to world-space delta
+      const dx = (dragState.x - prevDragX) / zoom;
+      const dy = (dragState.y - prevDragY) / zoom;
+      updateBurnFromDrag(maneuverNodes[0], activeManeuverHandle, { x: dx, y: dy });
+      prevDragX = dragState.x;
+      prevDragY = dragState.y;
+    }
+
+    // Detect drag start — check if we grab a handle
+    const dragStart = input.consumeDragStart();
+    if (dragStart && maneuverNodes[0]) {
+      // Convert screen click to world coords
+      const worldX = (dragStart.x - canvas.width / 2) / zoom + mapCam.x;
+      const worldY = (dragStart.y - canvas.height / 2) / zoom + mapCam.y;
+      const hitRadius = 12 / zoom;
+      const hitHandle = hitTestHandles(maneuverNodes[0], worldX, worldY, hitRadius);
+      if (hitHandle) {
+        activeManeuverHandle = hitHandle;
+        prevDragX = dragStart.x;
+        prevDragY = dragStart.y;
+      } else {
+        activeManeuverHandle = null;
+      }
+    }
+
+    // Detect drag end
+    if (input.consumeDragEnd()) {
+      activeManeuverHandle = null;
+    }
+
+    // Click (not drag) — place maneuver node on orbit path
+    if (click && !activeManeuverHandle) {
+      // Convert click to world coords
+      const worldX = (click.x - canvas.width / 2) / zoom + mapCam.x;
+      const worldY = (click.y - canvas.height / 2) / zoom + mapCam.y;
+
+      // Hit-test against orbit ellipse points
+      const orbit = ship.orbit;
+      const soiBody = ship.currentSOIBody;
+      if (orbit && soiBody && orbit.e < 1) {
+        const { a, e, omega } = orbit;
+        const bodyX = soiBody.x || 0;
+        const bodyY = soiBody.y || 0;
+        const cosO = Math.cos(omega);
+        const sinO = Math.sin(omega);
+        const b = a * Math.sqrt(1 - e * e);
+        const c = a * e;
+
+        const steps = 100;
+        let bestDist = Infinity;
+        let bestNu = 0;
+        for (let i = 0; i <= steps; i++) {
+          const theta = (i / steps) * Math.PI * 2;
+          const xE = a * Math.cos(theta) - c;
+          const yE = b * Math.sin(theta);
+          const wx = bodyX + cosO * xE - sinO * yE;
+          const wy = bodyY + sinO * xE + cosO * yE;
+          const d = dist(worldX, worldY, wx, wy);
+          if (d < bestDist) {
+            bestDist = d;
+            // Convert eccentric anomaly theta to true anomaly
+            // xE = a*cos(theta) - c => cos(theta) = (xE + c)/a
+            const cosTheta = (xE + c) / a;
+            const sinTheta = yE / b;
+            const E = Math.atan2(sinTheta, cosTheta);
+            bestNu = 2 * Math.atan2(
+              Math.sqrt(1 + e) * Math.sin(E / 2),
+              Math.sqrt(1 - e) * Math.cos(E / 2)
+            );
+          }
+        }
+
+        const clickThreshold = 20 / zoom;
+        if (bestDist <= clickThreshold) {
+          const node = createManeuverNode(bestNu, orbit, soiBody);
+          maneuverNodes[0] = node;
+          maneuverNodes.length = 1;
+        }
+      }
+    }
+
+    // Update maneuver info panel
+    if (maneuverNodes[0]) {
+      const dv = getManeuverDeltaV(maneuverNodes[0]);
+      if (maneuverDvDisplay) maneuverDvDisplay.textContent = dv.toFixed(1) + ' m/s';
+      if (maneuverInfo) maneuverInfo.classList.remove('hidden');
+    } else {
+      if (maneuverInfo) maneuverInfo.classList.add('hidden');
+    }
+  } else {
+    // Not in map mode — hide maneuver panel, clear active handle
+    if (maneuverInfo) maneuverInfo.classList.add('hidden');
+    activeManeuverHandle = null;
   }
 
   // Interact with nearest body
@@ -311,9 +460,50 @@ function render() {
   // Draw ship's predicted orbit path
   drawOrbitPath(ctx, effectiveCam, ship.orbit, ship.currentSOIBody, zoom);
 
+  // Draw trajectory prediction
+  const trajectorySegments = propagateTrajectory(
+    { x: ship.x, y: ship.y, vx: ship.vx, vy: ship.vy, currentSOIBody: ship.currentSOIBody },
+    system,
+    { maxTime: 600, maxSegments: 3, simBaseTime: time }
+  );
+  drawTrajectory(ctx, effectiveCam, trajectorySegments, zoom);
+
   // Draw ship at world-space screen position
   const wp = shipWorldPosition(ship, system);
   ship.draw(ctx, effectiveCam, wp, zoom);
+
+  // Draw maneuver nodes and post-burn trajectory in map mode
+  if (mapMode.isActive() && maneuverNodes[0]) {
+    const node = maneuverNodes[0];
+    // getNodeWorldPosition and getHandlePositions already include the soiBody world offset
+    node.worldPos = getNodeWorldPosition(node);
+    node.handlePositions = getHandlePositions(node);
+    const dv = getManeuverDeltaV(node);
+    node.dvLabel = dv.toFixed(1) + ' m/s';
+
+    drawManeuverNode(ctx, effectiveCam, node, activeManeuverHandle, zoom);
+
+    // Post-burn trajectory: getPostBurnState returns SOI-relative pos/vel
+    // propagateTrajectory also expects SOI-relative coords, so pass directly
+    const postBurnState = getPostBurnState(node);
+    const postBurnWorldState = {
+      x: postBurnState.x,
+      y: postBurnState.y,
+      vx: postBurnState.vx,
+      vy: postBurnState.vy,
+      currentSOIBody: node.soiBody,
+    };
+    const postBurnSegments = propagateTrajectory(
+      postBurnWorldState,
+      system,
+      { maxTime: 600, maxSegments: 3, simBaseTime: time }
+    );
+    // Override segment colors to orange for post-burn
+    for (const seg of postBurnSegments) {
+      seg.color = 'rgba(255, 160, 40, 0.5)';
+    }
+    drawPostBurnTrajectory(ctx, effectiveCam, postBurnSegments, zoom);
+  }
 
   // In map mode draw a highlighted pulsing ring around the ship so it is visible at zoom-out
   if (mapMode.isActive()) {
