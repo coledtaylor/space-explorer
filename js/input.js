@@ -10,6 +10,9 @@ export class Input {
     this.mouseX = 0;
     this.mouseY = 0;
 
+    this.warpUp = false;
+    this.warpDown = false;
+
     // Drag state
     this.dragStart = null;
     this.dragging = false;
@@ -64,6 +67,8 @@ export class Input {
       case 'd': case 'arrowright': this.right = down; break;
       case 'e': if (down) this.interact = true; break;
       case 'm': if (down) this.map = !this.map; break;
+      case '.': case '>': if (down) this.warpUp = true; break;
+      case ',': case '<': if (down) this.warpDown = true; break;
     }
   }
 
@@ -78,6 +83,22 @@ export class Input {
   consumeInteract() {
     if (this.interact) {
       this.interact = false;
+      return true;
+    }
+    return false;
+  }
+
+  consumeWarpUp() {
+    if (this.warpUp) {
+      this.warpUp = false;
+      return true;
+    }
+    return false;
+  }
+
+  consumeWarpDown() {
+    if (this.warpDown) {
+      this.warpDown = false;
       return true;
     }
     return false;
