@@ -15,10 +15,33 @@ export class Ship {
     this.thrustActive = false;
     this.currentSOIBody = null;
     this.activeManeuver = null;
+    this.landed = false;
     this.orbit = { a: 0, e: 0, omega: 0, nu: 0, T: 0, apoapsis: 0, periapsis: 0, altitude: 0 };
   }
 
   update(dt, input, currentSOIBody) {
+    // When landed, skip gravity/thrust/integration — ship is stationary on surface
+    // Angle updates still run so the player can orient for launch
+    if (this.landed) {
+      const pos = { x: this.x, y: this.y };
+      const vel = { x: this.vx, y: this.vy };
+      const elements = computeOrbitalElements(pos, vel, currentSOIBody.mu);
+      const apoapsis = elements.a * (1 + elements.e);
+      const periapsis = elements.a * (1 - elements.e);
+      const altitude = vec2Mag(pos) - currentSOIBody.radius;
+      this.orbit = {
+        a: elements.a,
+        e: elements.e,
+        omega: elements.omega,
+        nu: elements.nu,
+        T: elements.T,
+        apoapsis,
+        periapsis,
+        altitude,
+      };
+      return;
+    }
+
     // Gravity — ship pos is relative to SOI body, so body is at origin
     const grav = gravityAcceleration({ x: this.x, y: this.y }, { x: 0, y: 0 }, currentSOIBody.mu);
     this.vx += grav.x * dt;

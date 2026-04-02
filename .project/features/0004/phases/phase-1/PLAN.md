@@ -52,6 +52,8 @@ Task 2 (needs Task 1)  -> creates: index.html landing HUD, css/style.css landing
 ### Task 1: Create landing module and ship landed state
 **Type:** auto
 **Sequence:** 1
+**Status:** Complete
+Completed: 2026-04-02
 
 <files>
 js/landing.js
@@ -157,8 +159,8 @@ Landing HUD appears during approach with real-time altitude, descent rate, and h
 </done>
 
 ## Verification Checklist
-- [ ] `js/landing.js` exports `updateLanding`, `getLandingState`, `resetLanding`
-- [ ] `js/ship.js` Ship has `landed` property; `update()` skips physics when landed
+- [x] `js/landing.js` exports `updateLanding`, `getLandingState`, `resetLanding`
+- [x] `js/ship.js` Ship has `landed` property; `update()` skips physics when landed
 - [ ] `index.html` has `#landing-hud` with telemetry display elements
 - [ ] `css/style.css` has landing HUD styles with danger/warning color states
 - [ ] `js/main.js` imports and calls landing module each frame
