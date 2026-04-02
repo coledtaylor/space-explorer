@@ -1,11 +1,18 @@
 import Phaser from 'phaser';
-import { BootScene } from './scenes/BootScene';
+import { FlightScene } from './scenes/FlightScene';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
-  width: 1280,
-  height: 720,
-  scene: [BootScene],
+  width: window.innerWidth,
+  height: window.innerHeight,
+  backgroundColor: '#010118',
+  scene: [FlightScene],
+  scale: {
+    mode: Phaser.Scale.RESIZE,
+    parent: 'game-container',
+    width: '100%',
+    height: '100%',
+  },
 };
 
 new Phaser.Game(config);

@@ -83,6 +83,8 @@ Ship entity handles thrust/rotation physics and draws itself with engine glow. C
 ### Task 2: FlightScene with Gameplay Loop
 **Type:** auto
 **Sequence:** 2
+**Status:** Complete
+**Completed:** 2026-04-02
 
 <files>
 src/scenes/FlightScene.ts
