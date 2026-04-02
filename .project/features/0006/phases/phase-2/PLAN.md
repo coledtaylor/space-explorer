@@ -88,6 +88,8 @@ Pure zoom calculation module exists with correct altitude-to-zoom mapping, named
 ### Task 2: Integrate dynamic zoom into FlightScene
 **Type:** auto
 **Sequence:** 2
+**Status:** complete
+**Completed:** 2026-04-02
 
 <files>
 src/scenes/FlightScene.ts
@@ -137,8 +139,8 @@ FlightScene uses dynamic altitude-based zoom with smooth lerp transitions. Mouse
 
 ## Verification Checklist
 - [x] `src/lib/cameraZoom.ts` exists with pure zoom calculation function and named constants
-- [ ] `npx vite build` succeeds with no type errors
-- [ ] `DEFAULT_ZOOM` constant removed from FlightScene
+- [x] `npx vite build` succeeds with no type errors
+- [x] `DEFAULT_ZOOM` constant removed from FlightScene
 - [ ] Low orbit: planet fills 60-80% of screen height
 - [ ] High orbit: camera zooms out to show orbital context
 - [ ] Zoom transitions are smooth (no jarring jumps)

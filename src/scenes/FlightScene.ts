@@ -5,6 +5,7 @@ import { generateSystem, updateBodyPositions } from '../lib/celestial';
 import { checkSOITransition, shipWorldPosition, buildOrbitFromState } from '../lib/physics';
 import { stateFromOrbitalElements } from '../lib/orbit';
 import { seededRandom } from '../lib/utils';
+import { computeTargetZoom, ZOOM_CONFIG } from '../lib/cameraZoom';
 import { isLandableBody, LANDING_THRESHOLDS } from '../lib/landing.js';
 import {
   SYSTEM_TRANSITION_RADIUS as SCALE_SYSTEM_TRANSITION_RADIUS,
@@ -25,8 +26,6 @@ interface FlightResumeData {
   soiBody?: MassiveBody;
 }
 
-// Pixels per game-unit at default zoom
-const DEFAULT_ZOOM = 1.0;
 // Smoothing factor for camera lerp (fraction of distance closed per second)
 const CAMERA_LERP = 4.0;
 // Distance from origin (star) that triggers a new system (from scaleConfig — 1,500,000 gu)
@@ -123,6 +122,9 @@ export class FlightScene extends Phaser.Scene {
 
   private starLayers: StarPoint[][] = [];
 
+  // Timestamp (Phaser time.now ms) until which manual scroll-wheel zoom overrides auto-zoom
+  private _manualZoomUntil: number = 0;
+
   // (trajectory is computed and drawn inline each frame — no caching needed)
 
   // Non-null when the scene is being resumed after landing/surface (set in init())
@@ -147,7 +149,6 @@ export class FlightScene extends Phaser.Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor('#010118');
-    this.cameras.main.setZoom(DEFAULT_ZOOM);
 
     // Generate the star system — use existing seed when resuming so the same
     // system is restored after a landing sequence
@@ -188,6 +189,22 @@ export class FlightScene extends Phaser.Scene {
       D: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D),
     };
     this.mKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.M);
+
+    // Mouse scroll wheel: zoom override — temporarily suspends auto-zoom
+    this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _gameObjects: unknown, _deltaX: number, deltaY: number) => {
+      const cam = this.cameras.main;
+      const zoomFactor = deltaY < 0 ? 1.1 : 1 / 1.1;
+      cam.zoom = Math.min(ZOOM_CONFIG.MAX_ZOOM, Math.max(ZOOM_CONFIG.MIN_ZOOM, cam.zoom * zoomFactor));
+      this._manualZoomUntil = this.time.now + ZOOM_CONFIG.MANUAL_OVERRIDE_TIMEOUT_MS;
+    });
+
+    // Set initial zoom based on starting altitude so the view is immediately meaningful
+    const initialZoom = computeTargetZoom(
+      this.ship.orbit.altitude,
+      this.soiBody.radius,
+      this.scale.height,
+    );
+    this.cameras.main.setZoom(initialZoom);
 
     // Position camera at ship world position immediately (no lerp on first frame)
     const worldPos = this._shipWorldPosition();
@@ -416,16 +433,28 @@ export class FlightScene extends Phaser.Scene {
   }
 
   private _updateCamera(dt: number): void {
+    const cam = this.cameras.main;
+
+    // Auto-zoom: lerp toward altitude-computed target unless manual override is active
+    if (this.time.now >= this._manualZoomUntil) {
+      const targetZoom = computeTargetZoom(
+        this.ship.orbit.altitude,
+        this.soiBody.radius,
+        this.scale.height,
+      );
+      cam.zoom += (targetZoom - cam.zoom) * (1 - Math.exp(-ZOOM_CONFIG.ZOOM_LERP_SPEED * dt));
+    }
+
     const worldPos = this._shipWorldPosition();
     const { width, height } = this.scale;
-    const zoom = this.cameras.main.zoom;
+    const zoom = cam.zoom;
 
     const targetScrollX = worldPos.x - width / (2 * zoom);
     const targetScrollY = worldPos.y - height / (2 * zoom);
 
     const alpha = 1 - Math.exp(-CAMERA_LERP * dt);
-    this.cameras.main.scrollX += (targetScrollX - this.cameras.main.scrollX) * alpha;
-    this.cameras.main.scrollY += (targetScrollY - this.cameras.main.scrollY) * alpha;
+    cam.scrollX += (targetScrollX - cam.scrollX) * alpha;
+    cam.scrollY += (targetScrollY - cam.scrollY) * alpha;
   }
 
   private _handleSOITransition(shipState: ShipState): void {
@@ -530,9 +559,13 @@ export class FlightScene extends Phaser.Scene {
   private _drawStarfield(timeSec: number): void {
     const { width, height } = this.scale;
     const cam = this.cameras.main;
-    // Camera center in world space (scroll gives top-left corner)
-    const camCX = cam.scrollX * cam.zoom + width / 2;
-    const camCY = cam.scrollY * cam.zoom + height / 2;
+    // Camera center in world space (scroll gives top-left corner).
+    // Wrap within STARFIELD_EXTENT so extreme low-zoom scroll values don't degrade
+    // the modulo arithmetic used for parallax tiling.
+    const rawCamCX = cam.scrollX * cam.zoom + width / 2;
+    const rawCamCY = cam.scrollY * cam.zoom + height / 2;
+    const camCX = ((rawCamCX % STARFIELD_EXTENT) + STARFIELD_EXTENT) % STARFIELD_EXTENT;
+    const camCY = ((rawCamCY % STARFIELD_EXTENT) + STARFIELD_EXTENT) % STARFIELD_EXTENT;
 
     STARFIELD_LAYERS.forEach((layer, li) => {
       const stars = this.starLayers[li];
