@@ -90,6 +90,7 @@ Key design decisions:
 ### Task 2: Wire map mode into game loop and renderer
 **Type:** auto
 **Sequence:** 2
+Completed: 2026-04-01
 
 <files>
 js/main.js
@@ -147,16 +148,16 @@ Map mode is fully functional: M key toggles between flight and map view with smo
 
 ## Verification Checklist
 - [x] `js/mapmode.js` exists with `MapMode` class exported (named export, no default)
-- [ ] M key toggles map mode on and off
-- [ ] Zoom transition is smooth (animated over ~0.5-1 second), not a snap
-- [ ] Map mode camera centers on the current SOI body
-- [ ] All planets and their orbits are visible in map mode
-- [ ] Ship is visible as a highlighted marker in map mode
-- [ ] Body names/labels are readable at map zoom level
-- [ ] Returning to flight mode smoothly zooms back and camera follows ship
-- [ ] Ship physics continue running in map mode (bodies orbit, ship moves)
-- [ ] Flight controls (thrust, aim, scan, interact) work normally after returning from map mode
-- [ ] MAP indicator visible in HUD during map mode
+- [x] M key toggles map mode on and off
+- [x] Zoom transition is smooth (animated over ~0.5-1 second), not a snap
+- [x] Map mode camera centers on the current SOI body
+- [x] All planets and their orbits are visible in map mode
+- [x] Ship is visible as a highlighted marker in map mode
+- [x] Body names/labels are readable at map zoom level
+- [x] Returning to flight mode smoothly zooms back and camera follows ship
+- [x] Ship physics continue running in map mode (bodies orbit, ship moves)
+- [x] Flight controls (thrust, aim, scan, interact) work normally after returning from map mode
+- [x] MAP indicator visible in HUD during map mode
 - [ ] No console errors in browser dev tools
 
 ## Success Criteria

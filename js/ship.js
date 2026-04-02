@@ -72,12 +72,13 @@ export class Ship {
     return { x: this.x, y: this.y, vx: this.vx, vy: this.vy };
   }
 
-  draw(ctx, camera, worldPos) {
+  draw(ctx, camera, worldPos, zoom) {
+    zoom = zoom || 1;
     // Use world-space position if provided (needed when in planet SOI)
     const wx = worldPos ? worldPos.x : this.x;
     const wy = worldPos ? worldPos.y : this.y;
-    const sx = wx - camera.x + ctx.canvas.width / 2;
-    const sy = wy - camera.y + ctx.canvas.height / 2;
+    const sx = (wx - camera.x) * zoom + ctx.canvas.width / 2;
+    const sy = (wy - camera.y) * zoom + ctx.canvas.height / 2;
 
     ctx.save();
     ctx.translate(sx, sy);

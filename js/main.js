@@ -5,6 +5,7 @@ import { generateSystem, updateBodyPositions } from './celestial.js';
 import { drawBody, drawMinimap, setCameraHack, drawOrbitPath } from './renderer.js';
 import { checkSOITransition, shipWorldPosition } from './physics.js';
 import { dist } from './utils.js';
+import { MapMode } from './mapmode.js';
 
 const canvas = document.getElementById('game-canvas');
 const ctx = canvas.getContext('2d');
@@ -27,6 +28,7 @@ const scanPeriod = document.getElementById('scan-period');
 const scanSma = document.getElementById('scan-sma');
 const scanEcc = document.getElementById('scan-ecc');
 const locationDisplay = document.getElementById('location-display');
+const mapIndicator = document.getElementById('map-indicator');
 const coordsDisplay = document.getElementById('coords-display');
 const fuelDisplay = document.getElementById('fuel-display');
 const speedDisplay = document.getElementById('speed-display');
@@ -45,10 +47,12 @@ const soiDisplay = document.getElementById('soi-display');
 
 let running = false;
 let time = 0;
+let prevMapState = false;
 
 const input = new Input(canvas);
 const starfield = new Starfield();
 const camera = { x: 0, y: 0 };
+const mapMode = new MapMode();
 
 // Generate a starting system
 let currentSystemSeed = 42;
@@ -104,6 +108,22 @@ function loop(timestamp) {
 }
 
 function update(dt) {
+  // Map mode toggle — detect edge on input.map
+  if (input.map !== prevMapState) {
+    prevMapState = input.map;
+    mapMode.toggle();
+  }
+  mapMode.update(dt, ship, system, canvas, camera);
+
+  // Update map indicator visibility
+  if (mapIndicator) {
+    if (mapMode.isActive()) {
+      mapIndicator.classList.remove('hidden');
+    } else {
+      mapIndicator.classList.add('hidden');
+    }
+  }
+
   updateBodyPositions(system, dt);
   ship.update(dt, input, ship.currentSOIBody);
 
@@ -117,14 +137,15 @@ function update(dt) {
   camera.x += (wp.x - camera.x) * 0.08;
   camera.y += (wp.y - camera.y) * 0.08;
 
-  // Point ship at mouse. Compute ship screen position using the now-updated camera —
-  // the same camera render() will use — so both coordinate spaces match exactly.
-  // Mouse is stored in clientX/Y (CSS viewport pixels). For a full-screen canvas at
-  // (0,0) with no CSS scaling the canvas pixel grid equals the viewport CSS pixel grid,
-  // so no conversion is needed.
-  const shipScreenX = wp.x - camera.x + canvas.width / 2;
-  const shipScreenY = wp.y - camera.y + canvas.height / 2;
-  ship.angle = Math.atan2(input.mouseY - shipScreenY, input.mouseX - shipScreenX) + Math.PI / 2;
+  // Point ship at mouse only in flight mode — skip in map mode to avoid spinning
+  if (!mapMode.isActive()) {
+    // Mouse is stored in clientX/Y (CSS viewport pixels). For a full-screen canvas at
+    // (0,0) with no CSS scaling the canvas pixel grid equals the viewport CSS pixel grid,
+    // so no conversion is needed.
+    const shipScreenX = wp.x - camera.x + canvas.width / 2;
+    const shipScreenY = wp.y - camera.y + canvas.height / 2;
+    ship.angle = Math.atan2(input.mouseY - shipScreenY, input.mouseX - shipScreenX) + Math.PI / 2;
+  }
 
   // HUD
   coordsDisplay.textContent = `x: ${Math.round(wp.x)}  y: ${Math.round(wp.y)}`;
@@ -163,9 +184,9 @@ function update(dt) {
     }
   }
 
-  // Click to scan
+  // Click to scan — only in flight mode (map mode disables clicks to avoid mis-scans at zoom)
   const click = input.consumeClick();
-  if (click) {
+  if (click && !mapMode.isActive()) {
     for (const body of system.bodies) {
       const bsx = body.x - camera.x + canvas.width / 2;
       const bsy = body.y - camera.y + canvas.height / 2;
@@ -264,9 +285,16 @@ function render() {
   ctx.fillStyle = '#010108';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+  // Starfield draws before zoom transform — it is a parallax background, not a world object
   starfield.draw(ctx, camera, time);
 
-  setCameraHack(camera.x, camera.y);
+  // Determine effective camera and zoom from map mode
+  const zoom = mapMode.getZoom();
+  const mapCam = mapMode.getCamera();
+  const usingMapCam = mapMode.isActive();
+  const effectiveCam = usingMapCam ? mapCam : camera;
+
+  setCameraHack(effectiveCam.x, effectiveCam.y);
 
   // Draw bodies (stars first, then planets, then anomalies)
   const sorted = [...system.bodies].sort((a, b) => {
@@ -274,16 +302,34 @@ function render() {
     return (order[a.kind] || 0) - (order[b.kind] || 0);
   });
   for (const body of sorted) {
-    drawBody(ctx, body, camera, time);
+    drawBody(ctx, body, effectiveCam, time, zoom);
   }
 
   // Draw ship's predicted orbit path
-  drawOrbitPath(ctx, camera, ship.orbit, ship.currentSOIBody);
+  drawOrbitPath(ctx, effectiveCam, ship.orbit, ship.currentSOIBody, zoom);
 
   // Draw ship at world-space screen position
   const wp = shipWorldPosition(ship, system);
-  ship.draw(ctx, camera, wp);
+  ship.draw(ctx, effectiveCam, wp, zoom);
 
-  // Minimap
+  // In map mode draw a highlighted pulsing ring around the ship so it is visible at zoom-out
+  if (mapMode.isActive()) {
+    const shipSx = (wp.x - effectiveCam.x) * zoom + canvas.width / 2;
+    const shipSy = (wp.y - effectiveCam.y) * zoom + canvas.height / 2;
+    const pulse = 1 + Math.sin(time * 4) * 0.25;
+    const markerR = 12 * pulse;
+    ctx.beginPath();
+    ctx.arc(shipSx, shipSy, markerR, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255, 220, 80, 0.9)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // Inner dot
+    ctx.beginPath();
+    ctx.arc(shipSx, shipSy, 3, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 220, 80, 0.95)';
+    ctx.fill();
+  }
+
+  // Minimap — draws in its own canvas, not affected by the main canvas transform
   drawMinimap(minimapCtx, ship, system.bodies, camera);
 }

@@ -1,33 +1,45 @@
-export function drawBody(ctx, body, camera, time) {
-  const sx = body.x - camera.x + ctx.canvas.width / 2;
-  const sy = body.y - camera.y + ctx.canvas.height / 2;
+export function drawBody(ctx, body, camera, time, zoom) {
+  zoom = zoom || 1;
+  // Apply zoom to camera offset so bodies scale around the camera center
+  const sx = (body.x - camera.x) * zoom + ctx.canvas.width / 2;
+  const sy = (body.y - camera.y) * zoom + ctx.canvas.height / 2;
 
-  // Skip if off screen
-  const margin = body.radius * 3;
+  // Scale the body radius for rendering and culling
+  const dr = body.radius * zoom;
+
+  // Widen off-screen culling margin by 1/zoom so bodies near screen edges stay visible
+  const margin = dr * 3 + ctx.canvas.width * (1 / zoom);
   if (sx < -margin || sx > ctx.canvas.width + margin ||
       sy < -margin || sy > ctx.canvas.height + margin) return;
 
   if (body.kind === 'star') {
-    drawStar(ctx, sx, sy, body, time);
+    drawStar(ctx, sx, sy, body, time, zoom);
   } else if (body.kind === 'planet') {
-    drawPlanet(ctx, sx, sy, body, time);
+    drawPlanet(ctx, sx, sy, body, time, zoom);
   } else if (body.kind === 'moon') {
-    drawMoon(ctx, sx, sy, body);
+    drawMoon(ctx, sx, sy, body, zoom);
   } else if (body.kind === 'anomaly') {
-    drawAnomaly(ctx, sx, sy, body, time);
+    drawAnomaly(ctx, sx, sy, body, time, zoom);
   }
 
-  // Name label
+  // Name label — scale inversely with zoom so text stays readable at map zoom
+  const labelScale = 1 / zoom;
+  ctx.save();
+  ctx.translate(sx, sy + dr + 18 * labelScale);
+  ctx.scale(labelScale, labelScale);
   ctx.font = '11px "Segoe UI", system-ui, sans-serif';
   ctx.fillStyle = 'rgba(200, 210, 220, 0.6)';
   ctx.textAlign = 'center';
-  ctx.fillText(body.name, sx, sy + body.radius + 18);
+  ctx.fillText(body.name, 0, 0);
+  ctx.restore();
 }
 
-function drawStar(ctx, sx, sy, body, time) {
+function drawStar(ctx, sx, sy, body, time, zoom) {
+  zoom = zoom || 1;
+  const r = body.radius * zoom;
   // Outer glow
-  const glowSize = body.radius * 3 + Math.sin(time * 0.5) * 5;
-  const glow = ctx.createRadialGradient(sx, sy, body.radius * 0.5, sx, sy, glowSize);
+  const glowSize = r * 3 + Math.sin(time * 0.5) * 5 * zoom;
+  const glow = ctx.createRadialGradient(sx, sy, r * 0.5, sx, sy, glowSize);
   glow.addColorStop(0, body.glowColor.replace('0.15', '0.3'));
   glow.addColorStop(0.5, body.glowColor);
   glow.addColorStop(1, 'transparent');
@@ -37,52 +49,55 @@ function drawStar(ctx, sx, sy, body, time) {
   ctx.fill();
 
   // Body
-  const bodyGrad = ctx.createRadialGradient(sx - body.radius * 0.3, sy - body.radius * 0.3, 0, sx, sy, body.radius);
+  const bodyGrad = ctx.createRadialGradient(sx - r * 0.3, sy - r * 0.3, 0, sx, sy, r);
   bodyGrad.addColorStop(0, '#fff');
   bodyGrad.addColorStop(0.4, body.color);
   bodyGrad.addColorStop(1, body.color.replace('rgb', 'rgba').replace(')', ',0.8)'));
   ctx.beginPath();
-  ctx.arc(sx, sy, body.radius, 0, Math.PI * 2);
+  ctx.arc(sx, sy, r, 0, Math.PI * 2);
   ctx.fillStyle = bodyGrad;
   ctx.fill();
 }
 
-function drawPlanet(ctx, sx, sy, body, time) {
+function drawPlanet(ctx, sx, sy, body, time, zoom) {
+  zoom = zoom || 1;
+  const r = body.radius * zoom;
   // Shadow
   ctx.beginPath();
-  ctx.arc(sx + 2, sy + 2, body.radius, 0, Math.PI * 2);
+  ctx.arc(sx + 2 * zoom, sy + 2 * zoom, r, 0, Math.PI * 2);
   ctx.fillStyle = 'rgba(0,0,0,0.3)';
   ctx.fill();
 
   // Body
-  const grad = ctx.createRadialGradient(sx - body.radius * 0.3, sy - body.radius * 0.3, 0, sx, sy, body.radius);
+  const grad = ctx.createRadialGradient(sx - r * 0.3, sy - r * 0.3, 0, sx, sy, r);
   grad.addColorStop(0, lighten(body.color, 40));
   grad.addColorStop(1, body.color);
   ctx.beginPath();
-  ctx.arc(sx, sy, body.radius, 0, Math.PI * 2);
+  ctx.arc(sx, sy, r, 0, Math.PI * 2);
   ctx.fillStyle = grad;
   ctx.fill();
 
   // Subtype-specific effects
   if (body.subtype === 'Gas Giant') {
-    drawGasGiantEffects(ctx, sx, sy, body, time);
+    drawGasGiantEffects(ctx, sx, sy, body, time, zoom);
   } else if (body.subtype === 'Ice World') {
-    drawIceWorldEffects(ctx, sx, sy, body, time);
+    drawIceWorldEffects(ctx, sx, sy, body, time, zoom);
   } else if (body.subtype === 'Volcanic') {
-    drawVolcanicEffects(ctx, sx, sy, body);
+    drawVolcanicEffects(ctx, sx, sy, body, zoom);
   } else if (body.subtype === 'Ocean World') {
-    drawOceanWorldEffects(ctx, sx, sy, body);
+    drawOceanWorldEffects(ctx, sx, sy, body, zoom);
   } else if (body.subtype === 'Desert') {
-    drawDesertEffects(ctx, sx, sy, body);
+    drawDesertEffects(ctx, sx, sy, body, zoom);
   } else if (body.subtype === 'Lush') {
-    drawLushEffects(ctx, sx, sy, body);
+    drawLushEffects(ctx, sx, sy, body, zoom);
   } else if (body.subtype === 'Rocky') {
-    drawRockyEffects(ctx, sx, sy, body);
+    drawRockyEffects(ctx, sx, sy, body, zoom);
   }
 }
 
-function drawGasGiantEffects(ctx, sx, sy, body, time) {
-  const r = body.radius;
+function drawGasGiantEffects(ctx, sx, sy, body, time, zoom) {
+  zoom = zoom || 1;
+  const r = body.radius * zoom;
   // Cloud bands clipped to planet circle
   ctx.save();
   ctx.beginPath();
@@ -104,18 +119,19 @@ function drawGasGiantEffects(ctx, sx, sy, body, time) {
   ctx.beginPath();
   ctx.ellipse(sx, sy, ringRx, ringRy, 0.35, Math.PI, Math.PI * 2);
   ctx.strokeStyle = `hsla(${body.hue},50%,70%,0.35)`;
-  ctx.lineWidth = Math.max(2, r * 0.12);
+  ctx.lineWidth = Math.max(2 * zoom, r * 0.12);
   ctx.stroke();
   // Front half of ring (over the planet)
   ctx.beginPath();
   ctx.ellipse(sx, sy, ringRx, ringRy, 0.35, 0, Math.PI);
   ctx.strokeStyle = `hsla(${body.hue},50%,70%,0.5)`;
-  ctx.lineWidth = Math.max(2, r * 0.12);
+  ctx.lineWidth = Math.max(2 * zoom, r * 0.12);
   ctx.stroke();
 }
 
-function drawIceWorldEffects(ctx, sx, sy, body, time) {
-  const r = body.radius;
+function drawIceWorldEffects(ctx, sx, sy, body, time, zoom) {
+  zoom = zoom || 1;
+  const r = body.radius * zoom;
   // Faint blue-white outer glow
   const glow = ctx.createRadialGradient(sx, sy, r * 0.8, sx, sy, r * 1.6);
   glow.addColorStop(0, 'rgba(200, 230, 255, 0.15)');
@@ -128,7 +144,7 @@ function drawIceWorldEffects(ctx, sx, sy, body, time) {
   const glintAngle = time * 0.4;
   const glintX = sx + Math.cos(glintAngle) * r * 0.3;
   const glintY = sy + Math.sin(glintAngle) * r * 0.2 - r * 0.25;
-  const glintR = Math.max(1.5, r * 0.12);
+  const glintR = Math.max(1.5 * zoom, r * 0.12);
   const glintGrad = ctx.createRadialGradient(glintX, glintY, 0, glintX, glintY, glintR);
   glintGrad.addColorStop(0, 'rgba(255,255,255,0.9)');
   glintGrad.addColorStop(1, 'transparent');
@@ -138,8 +154,9 @@ function drawIceWorldEffects(ctx, sx, sy, body, time) {
   ctx.fill();
 }
 
-function drawVolcanicEffects(ctx, sx, sy, body) {
-  const r = body.radius;
+function drawVolcanicEffects(ctx, sx, sy, body, zoom) {
+  zoom = zoom || 1;
+  const r = body.radius * zoom;
   // Red-orange heat glow
   const heatGlow = ctx.createRadialGradient(sx, sy, r * 0.85, sx, sy, r * 1.55);
   heatGlow.addColorStop(0, 'rgba(255, 80, 0, 0.18)');
@@ -157,7 +174,7 @@ function drawVolcanicEffects(ctx, sx, sy, body) {
   for (const spot of spots) {
     const lx = sx + Math.cos(spot.angle) * r * spot.dist;
     const ly = sy + Math.sin(spot.angle) * r * spot.dist;
-    const lr = Math.max(1.5, r * 0.1);
+    const lr = Math.max(1.5 * zoom, r * 0.1);
     ctx.beginPath();
     ctx.arc(lx, ly, lr, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(255, 180, 0, 0.85)';
@@ -165,8 +182,9 @@ function drawVolcanicEffects(ctx, sx, sy, body) {
   }
 }
 
-function drawOceanWorldEffects(ctx, sx, sy, body) {
-  const r = body.radius;
+function drawOceanWorldEffects(ctx, sx, sy, body, zoom) {
+  zoom = zoom || 1;
+  const r = body.radius * zoom;
   // Wave-like bands clipped to circle
   ctx.save();
   ctx.beginPath();
@@ -180,14 +198,15 @@ function drawOceanWorldEffects(ctx, sx, sy, body) {
   ctx.restore();
   // Thicker brighter atmosphere ring
   ctx.beginPath();
-  ctx.arc(sx, sy, r + 4, 0, Math.PI * 2);
+  ctx.arc(sx, sy, r + 4 * zoom, 0, Math.PI * 2);
   ctx.strokeStyle = 'rgba(80, 160, 255, 0.35)';
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 3 * zoom;
   ctx.stroke();
 }
 
-function drawDesertEffects(ctx, sx, sy, body) {
-  const r = body.radius;
+function drawDesertEffects(ctx, sx, sy, body, zoom) {
+  zoom = zoom || 1;
+  const r = body.radius * zoom;
   // Warm dust haze glow
   const dustGlow = ctx.createRadialGradient(sx, sy, r * 0.9, sx, sy, r * 1.5);
   dustGlow.addColorStop(0, 'rgba(200, 140, 60, 0.12)');
@@ -209,13 +228,14 @@ function drawDesertEffects(ctx, sx, sy, body) {
   ctx.restore();
 }
 
-function drawLushEffects(ctx, sx, sy, body) {
-  const r = body.radius;
+function drawLushEffects(ctx, sx, sy, body, zoom) {
+  zoom = zoom || 1;
+  const r = body.radius * zoom;
   // Thin green atmosphere ring
   ctx.beginPath();
-  ctx.arc(sx, sy, r + 3, 0, Math.PI * 2);
+  ctx.arc(sx, sy, r + 3 * zoom, 0, Math.PI * 2);
   ctx.strokeStyle = 'rgba(80, 200, 80, 0.3)';
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 2 * zoom;
   ctx.stroke();
   // Continent-like darker arcs clipped to circle
   ctx.save();
@@ -238,8 +258,9 @@ function drawLushEffects(ctx, sx, sy, body) {
   ctx.restore();
 }
 
-function drawRockyEffects(ctx, sx, sy, body) {
-  const r = body.radius;
+function drawRockyEffects(ctx, sx, sy, body, zoom) {
+  zoom = zoom || 1;
+  const r = body.radius * zoom;
   // Crater marks clipped to planet circle
   ctx.save();
   ctx.beginPath();
@@ -253,7 +274,7 @@ function drawRockyEffects(ctx, sx, sy, body) {
   for (const crater of craters) {
     const cx2 = sx + Math.cos(crater.angle) * r * crater.dist;
     const cy2 = sy + Math.sin(crater.angle) * r * crater.dist;
-    const cr = Math.max(1.5, r * 0.14);
+    const cr = Math.max(1.5 * zoom, r * 0.14);
     ctx.beginPath();
     ctx.arc(cx2, cy2, cr, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
@@ -261,14 +282,15 @@ function drawRockyEffects(ctx, sx, sy, body) {
     ctx.beginPath();
     ctx.arc(cx2, cy2, cr, 0, Math.PI * 2);
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)';
-    ctx.lineWidth = 1;
+    ctx.lineWidth = zoom;
     ctx.stroke();
   }
   ctx.restore();
 }
 
-function drawMoon(ctx, sx, sy, body) {
-  const r = body.radius;
+function drawMoon(ctx, sx, sy, body, zoom) {
+  zoom = zoom || 1;
+  const r = body.radius * zoom;
 
   // Base gradient — simpler than planets, no atmosphere
   const grad = ctx.createRadialGradient(sx - r * 0.25, sy - r * 0.25, 0, sx, sy, r);
@@ -292,7 +314,7 @@ function drawMoon(ctx, sx, sy, body) {
   for (const crater of craters) {
     const cx2 = sx + Math.cos(crater.angle) * r * crater.dist;
     const cy2 = sy + Math.sin(crater.angle) * r * crater.dist;
-    const cr = Math.max(1, r * 0.12);
+    const cr = Math.max(1 * zoom, r * 0.12);
     ctx.beginPath();
     ctx.arc(cx2, cy2, cr, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
@@ -311,25 +333,27 @@ function drawMoon(ctx, sx, sy, body) {
   ctx.fill();
 }
 
-function drawAnomaly(ctx, sx, sy, body, time) {
+function drawAnomaly(ctx, sx, sy, body, time, zoom) {
+  zoom = zoom || 1;
+  const br = body.radius * zoom;
   // Pulsing rings
   for (let i = 0; i < 3; i++) {
-    const r = body.radius + i * 10 + Math.sin(time * 2 + i) * 5;
+    const r = br + i * 10 * zoom + Math.sin(time * 2 + i) * 5 * zoom;
     const alpha = 0.3 - i * 0.08;
     ctx.beginPath();
     ctx.arc(sx, sy, r, 0, Math.PI * 2);
     ctx.strokeStyle = `rgba(176, 64, 255, ${alpha})`;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2 * zoom;
     ctx.stroke();
   }
 
   // Core
-  const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, body.radius);
+  const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, br);
   grad.addColorStop(0, 'rgba(200, 150, 255, 0.8)');
   grad.addColorStop(0.5, 'rgba(176, 64, 255, 0.4)');
   grad.addColorStop(1, 'transparent');
   ctx.beginPath();
-  ctx.arc(sx, sy, body.radius, 0, Math.PI * 2);
+  ctx.arc(sx, sy, br, 0, Math.PI * 2);
   ctx.fillStyle = grad;
   ctx.fill();
 }
@@ -342,15 +366,16 @@ export function setCameraHack(cx, cy) {
 }
 
 // Draw the ship's predicted orbit path around soiBody
-export function drawOrbitPath(ctx, camera, orbitalElements, soiBody) {
+export function drawOrbitPath(ctx, camera, orbitalElements, soiBody, zoom) {
   if (!orbitalElements || !soiBody) return;
+  zoom = zoom || 1;
 
   const { a, e, omega } = orbitalElements;
   if (a === undefined || e === undefined || omega === undefined) return;
 
-  // Screen position of the SOI body (focus of the orbit)
-  const focusSx = soiBody.x - camera.x + ctx.canvas.width / 2;
-  const focusSy = soiBody.y - camera.y + ctx.canvas.height / 2;
+  // Screen position of the SOI body (focus of the orbit) — apply zoom
+  const focusSx = (soiBody.x - camera.x) * zoom + ctx.canvas.width / 2;
+  const focusSy = (soiBody.y - camera.y) * zoom + ctx.canvas.height / 2;
 
   const cosO = Math.cos(omega);
   const sinO = Math.sin(omega);
@@ -367,9 +392,9 @@ export function drawOrbitPath(ctx, camera, orbitalElements, soiBody) {
       // Ellipse in perifocal frame (center at origin, focus at -c along x)
       const xE = a * Math.cos(theta) - c;
       const yE = b * Math.sin(theta);
-      // Rotate by omega into world frame, then to screen
-      const sx = focusSx + cosO * xE - sinO * yE;
-      const sy = focusSy + sinO * xE + cosO * yE;
+      // Rotate by omega into world frame, scale by zoom, then to screen
+      const sx = focusSx + (cosO * xE - sinO * yE) * zoom;
+      const sy = focusSy + (sinO * xE + cosO * yE) * zoom;
       points.push({ sx, sy });
     }
 
@@ -386,14 +411,14 @@ export function drawOrbitPath(ctx, camera, orbitalElements, soiBody) {
 
     // Periapsis marker (at theta=0, xE = a - c = a*(1-e), yE = 0)
     const pxE = a * (1 - e);
-    const periSx = focusSx + cosO * pxE;
-    const periSy = focusSy + sinO * pxE;
+    const periSx = focusSx + cosO * pxE * zoom;
+    const periSy = focusSy + sinO * pxE * zoom;
     drawDiamond(ctx, periSx, periSy, 4, 'rgba(79, 195, 247, 0.6)');
 
     // Apoapsis marker (at theta=PI, xE = -a - c = -a*(1+e), yE = 0)
     const axE = -a * (1 + e);
-    const apoSx = focusSx + cosO * axE;
-    const apoSy = focusSy + sinO * axE;
+    const apoSx = focusSx + cosO * axE * zoom;
+    const apoSy = focusSy + sinO * axE * zoom;
     drawDiamond(ctx, apoSx, apoSy, 4, 'rgba(79, 195, 247, 0.6)');
   } else {
     // Hyperbolic orbit
@@ -410,9 +435,9 @@ export function drawOrbitPath(ctx, camera, orbitalElements, soiBody) {
       if (r < 0) continue;
       const xP = r * Math.cos(nu);
       const yP = r * Math.sin(nu);
-      // Rotate by omega
-      const sx = focusSx + cosO * xP - sinO * yP;
-      const sy = focusSy + sinO * xP + cosO * yP;
+      // Rotate by omega, scale by zoom
+      const sx = focusSx + (cosO * xP - sinO * yP) * zoom;
+      const sy = focusSy + (sinO * xP + cosO * yP) * zoom;
       points.push({ sx, sy });
     }
 

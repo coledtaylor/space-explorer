@@ -56,6 +56,15 @@ body {
   color: #4fc3f7;
 }
 
+#map-indicator {
+  color: #ff9800;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  text-shadow: 0 0 10px rgba(255, 152, 0, 0.8), 0 0 20px rgba(255, 152, 0, 0.4);
+}
+
 /* Minimap */
 #minimap {
   position: absolute;
