@@ -268,13 +268,46 @@ function drawRockyEffects(ctx, sx, sy, body) {
 }
 
 function drawMoon(ctx, sx, sy, body) {
-  // Simple grey sphere with subtle gradient
-  const grad = ctx.createRadialGradient(sx - body.radius * 0.3, sy - body.radius * 0.3, 0, sx, sy, body.radius);
-  grad.addColorStop(0, lighten(body.color, 30));
+  const r = body.radius;
+
+  // Base gradient — simpler than planets, no atmosphere
+  const grad = ctx.createRadialGradient(sx - r * 0.25, sy - r * 0.25, 0, sx, sy, r);
+  grad.addColorStop(0, lighten(body.color, 25));
   grad.addColorStop(1, body.color);
   ctx.beginPath();
-  ctx.arc(sx, sy, body.radius, 0, Math.PI * 2);
+  ctx.arc(sx, sy, r, 0, Math.PI * 2);
   ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Crater marks — 2-3 small darker spots, positions derived from hue for determinism
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(sx, sy, r, 0, Math.PI * 2);
+  ctx.clip();
+  const craters = [
+    { angle: body.hue * 0.0175, dist: 0.42 },
+    { angle: body.hue * 0.0175 + 2.2, dist: 0.48 },
+    { angle: body.hue * 0.0175 + 4.5, dist: 0.35 },
+  ];
+  for (const crater of craters) {
+    const cx2 = sx + Math.cos(crater.angle) * r * crater.dist;
+    const cy2 = sy + Math.sin(crater.angle) * r * crater.dist;
+    const cr = Math.max(1, r * 0.12);
+    ctx.beginPath();
+    ctx.arc(cx2, cy2, cr, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Faint shadow on one side — crescent/lit appearance
+  const shadowGrad = ctx.createRadialGradient(sx + r * 0.4, sy + r * 0.2, 0, sx, sy, r);
+  shadowGrad.addColorStop(0, 'transparent');
+  shadowGrad.addColorStop(0.55, 'transparent');
+  shadowGrad.addColorStop(1, 'rgba(0, 0, 0, 0.45)');
+  ctx.beginPath();
+  ctx.arc(sx, sy, r, 0, Math.PI * 2);
+  ctx.fillStyle = shadowGrad;
   ctx.fill();
 }
 
@@ -433,18 +466,37 @@ export function drawMinimap(minimapCtx, ship, bodies, camera) {
     const by = cy + (body.y - camera.y) * scale;
     if (bx < 0 || bx > w || by < 0 || by > h) continue;
 
-    const r = Math.max(1.5, body.radius * scale * 2);
-
     if (body.kind === 'star') {
+      const r = Math.max(1.5, body.radius * scale * 2);
       minimapCtx.fillStyle = body.color;
+      minimapCtx.beginPath();
+      minimapCtx.arc(bx, by, r, 0, Math.PI * 2);
+      minimapCtx.fill();
     } else if (body.kind === 'anomaly') {
+      const r = Math.max(1.5, body.radius * scale * 2);
       minimapCtx.fillStyle = '#b040ff';
+      minimapCtx.beginPath();
+      minimapCtx.arc(bx, by, r, 0, Math.PI * 2);
+      minimapCtx.fill();
+    } else if (body.kind === 'moon') {
+      const r = Math.max(1, body.radius * scale * 1.5);
+      const match = body.color.match(/\d+/g);
+      if (match) {
+        const [mr, mg, mb] = match.map(Number);
+        minimapCtx.fillStyle = `rgba(${mr},${mg},${mb},0.55)`;
+      } else {
+        minimapCtx.fillStyle = 'rgba(160, 160, 170, 0.55)';
+      }
+      minimapCtx.beginPath();
+      minimapCtx.arc(bx, by, r, 0, Math.PI * 2);
+      minimapCtx.fill();
     } else {
+      const r = Math.max(1.5, body.radius * scale * 2);
       minimapCtx.fillStyle = body.color;
+      minimapCtx.beginPath();
+      minimapCtx.arc(bx, by, r, 0, Math.PI * 2);
+      minimapCtx.fill();
     }
-    minimapCtx.beginPath();
-    minimapCtx.arc(bx, by, r, 0, Math.PI * 2);
-    minimapCtx.fill();
   }
 
   // Ship

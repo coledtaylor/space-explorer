@@ -80,6 +80,8 @@ Each of the 7 planet subtypes renders with a unique visual treatment beyond just
 ### Task 2: Moon Rendering and Minimap Integration
 **Type:** auto
 **Sequence:** 2
+**Status:** complete
+Completed: 2026-04-01
 
 <files>
 js/renderer.js
