@@ -8,6 +8,7 @@ import { checkSOITransition, shipWorldPosition } from './physics.js';
 import { dist } from './utils.js';
 import { MapMode } from './mapmode.js';
 import { getWarpRate, increaseWarp, decreaseWarp, resetWarp } from './timewarp.js';
+import { updateLanding, getLandingState, resetLanding } from './landing.js';
 import { updateBurnGuide, drawBurnGuide } from './burnguide.js';
 import {
   createManeuverNode,
@@ -57,6 +58,13 @@ const burnGuideEl = document.getElementById('burn-guide');
 const burnCountdown = document.getElementById('burn-countdown');
 const burnDvRemaining = document.getElementById('burn-dv-remaining');
 const burnStatus = document.getElementById('burn-status');
+
+// Landing HUD elements
+const landingHud = document.getElementById('landing-hud');
+const landingAlt = document.getElementById('landing-alt');
+const landingVs = document.getElementById('landing-vs');
+const landingHs = document.getElementById('landing-hs');
+const landingStatus = document.getElementById('landing-status');
 
 // Orbital HUD elements
 const altDisplay = document.getElementById('alt-display');
@@ -148,9 +156,14 @@ function loop(timestamp) {
     // Auto-drop warp on thrust
     if (ship.thrustActive) resetWarp();
 
-    // SOI transition check — must happen after both ship and body positions are updated
-    const transition = checkSOITransition(ship, system);
-    if (transition) resetWarp();
+    // Landing update — runs after ship physics, before SOI transition
+    updateLanding(ship, subDt);
+
+    // SOI transition check — skip when landed (ship is stationary on surface)
+    if (!ship.landed) {
+      const transition = checkSOITransition(ship, system);
+      if (transition) resetWarp();
+    }
   }
 
   // Update warp HUD
@@ -267,6 +280,117 @@ function update(dt) {
   } else {
     burnGuideEl.classList.add('hidden');
     burnGuideEl.classList.remove('burn-active');
+  }
+
+  // Landing HUD — read state and update display each frame
+  const ls = getLandingState();
+  if (ls.state === 'approach') {
+    landingHud.classList.remove('hidden');
+
+    // Altitude
+    landingAlt.textContent = Math.max(0, Math.round(ls.altitude));
+    landingAlt.className = '';
+
+    // Vertical speed — color-code by danger level
+    const vsVal = ls.descentRate;
+    landingVs.textContent = vsVal.toFixed(1);
+    if (vsVal > 0.9 * 3) {
+      landingVs.className = 'danger';
+    } else if (vsVal > 0.6 * 3) {
+      landingVs.className = 'warn';
+    } else {
+      landingVs.className = '';
+    }
+
+    // Horizontal speed — color-code by danger level
+    const hsVal = ls.horizontalVelocity;
+    landingHs.textContent = hsVal.toFixed(1);
+    if (hsVal > 0.9 * 4) {
+      landingHs.className = 'danger';
+    } else if (hsVal > 0.6 * 4) {
+      landingHs.className = 'warn';
+    } else {
+      landingHs.className = '';
+    }
+
+    // Status text — DANGER if any value is in warn/danger zone
+    const inDanger = vsVal > 0.6 * 3 || hsVal > 0.6 * 4;
+    if (ls.isGasGiant) {
+      landingStatus.textContent = 'ATMOSPHERE';
+      landingStatus.className = 'status-danger';
+    } else if (inDanger) {
+      landingStatus.textContent = 'DANGER';
+      landingStatus.className = 'status-danger';
+    } else {
+      landingStatus.textContent = 'NOMINAL';
+      landingStatus.className = 'status-nominal';
+    }
+  } else if (ls.state === 'landed') {
+    landingHud.classList.remove('hidden');
+    landingAlt.textContent = '0';
+    landingAlt.className = '';
+    landingVs.textContent = '0.0';
+    landingVs.className = '';
+    landingHs.textContent = '0.0';
+    landingHs.className = '';
+    landingStatus.textContent = 'LANDED';
+    landingStatus.className = 'status-landed';
+  } else if (ls.state === 'crashed') {
+    // Respawn in circular orbit around the crashed body
+    const body = ls.body;
+    if (body) {
+      const orbitRadius = body.radius * 4;
+      ship.x = orbitRadius;
+      ship.y = 0;
+      ship.vx = 0;
+      ship.vy = -Math.sqrt(body.mu / orbitRadius);
+      ship.landed = false;
+    }
+    resetLanding();
+    // Brief crash message then hide
+    landingHud.classList.remove('hidden');
+    landingAlt.textContent = '0';
+    landingAlt.className = 'danger';
+    landingVs.textContent = '—';
+    landingVs.className = 'danger';
+    landingHs.textContent = '—';
+    landingHs.className = 'danger';
+    landingStatus.textContent = 'CRASH';
+    landingStatus.className = 'status-crash';
+    setTimeout(() => landingHud.classList.add('hidden'), 2000);
+  } else if (ls.state === 'crushed') {
+    // Respawn in circular orbit around the parent star
+    ship.currentSOIBody = system.star;
+    // Place ship at gas giant world position offset from star, then circular orbit around star
+    const crushBody = ls.body;
+    if (crushBody) {
+      const orbitRadius = Math.sqrt(crushBody.x * crushBody.x + crushBody.y * crushBody.y);
+      ship.x = orbitRadius;
+      ship.y = 0;
+      ship.vx = 0;
+      ship.vy = -Math.sqrt(system.star.mu / orbitRadius);
+    } else {
+      ship.x = INITIAL_ORBIT_RADIUS;
+      ship.y = 0;
+      ship.vx = 0;
+      ship.vy = -Math.sqrt(system.star.mu / INITIAL_ORBIT_RADIUS);
+    }
+    ship.landed = false;
+    resetLanding();
+    // Brief crush message then hide
+    landingHud.classList.remove('hidden');
+    landingAlt.textContent = '0';
+    landingAlt.className = 'danger';
+    landingVs.textContent = '—';
+    landingVs.className = 'danger';
+    landingHs.textContent = '—';
+    landingHs.className = 'danger';
+    landingStatus.textContent = 'ATMO CRUSH';
+    landingStatus.className = 'status-crush';
+    setTimeout(() => landingHud.classList.add('hidden'), 2000);
+  } else {
+    // inactive
+    landingHud.classList.add('hidden');
   }
 
   // Find nearest body for scan interaction (use world-space distances)
@@ -434,6 +558,7 @@ function update(dt) {
     camera.x = ship.x;
     camera.y = ship.y;
     scanPanel.classList.add('hidden');
+    resetLanding();
   }
 }
 
