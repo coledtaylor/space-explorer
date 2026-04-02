@@ -17,6 +17,7 @@
       <div id="hud-right">
         <span id="fuel-display">Fuel: 100%</span>
         <span id="speed-display">Speed: 0</span>
+        <span id="science-display">Science: 0</span>
         <span id="warp-display" class="hidden">WARP 1x</span>
       </div>
     </div>
@@ -63,6 +64,16 @@
       <div class="landing-row"><span class="landing-label">V/S</span><span id="landing-vs">0</span><span class="landing-unit">m/s</span></div>
       <div class="landing-row"><span class="landing-label">H/S</span><span id="landing-hs">0</span><span class="landing-unit">m/s</span></div>
       <div class="landing-row"><span class="landing-label">STATUS</span><span id="landing-status">APPROACH</span></div>
+    </div>
+    <div id="surface-panel" class="hidden">
+      <h2 id="surface-body-name"></h2>
+      <p id="surface-body-type"></p>
+      <p id="surface-body-desc"></p>
+      <div id="surface-actions">
+        <button id="surface-scan-btn">Scan</button>
+        <button id="surface-sample-btn">Collect Sample</button>
+      </div>
+      <div id="surface-result"></div>
     </div>
     <div id="scan-panel" class="hidden">
       <button id="scan-close">&times;</button>

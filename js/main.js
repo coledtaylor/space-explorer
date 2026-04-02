@@ -10,6 +10,7 @@ import { MapMode } from './mapmode.js';
 import { getWarpRate, increaseWarp, decreaseWarp, resetWarp } from './timewarp.js';
 import { updateLanding, getLandingState, resetLanding } from './landing.js';
 import { updateBurnGuide, drawBurnGuide } from './burnguide.js';
+import { showSurfacePanel, hideSurfacePanel, getScience } from './surface.js';
 import {
   createManeuverNode,
   getNodeWorldPosition,
@@ -59,6 +60,9 @@ const burnCountdown = document.getElementById('burn-countdown');
 const burnDvRemaining = document.getElementById('burn-dv-remaining');
 const burnStatus = document.getElementById('burn-status');
 
+// Science display
+const scienceDisplay = document.getElementById('science-display');
+
 // Landing HUD elements
 const landingHud = document.getElementById('landing-hud');
 const landingAlt = document.getElementById('landing-alt');
@@ -79,6 +83,7 @@ let running = false;
 let time = 0;
 let prevMapState = false;
 let burnGuidance = null;
+let wasLanded = false;
 
 // Landing zoom state
 let landingZoom = 1.0;
@@ -191,6 +196,7 @@ function loop(timestamp) {
 
 function update(dt) {
   // Map mode toggle — detect edge on input.map
+  const prevMapActive = mapMode.isActive();
   if (input.map !== prevMapState) {
     prevMapState = input.map;
     mapMode.toggle();
@@ -204,6 +210,28 @@ function update(dt) {
     } else {
       mapIndicator.classList.add('hidden');
     }
+  }
+
+  // Surface panel — detect landed state transitions
+  const isNowLanded = ship.landed === true;
+  const landedBody = getLandingState().body || ship.currentSOIBody;
+  if (isNowLanded && !wasLanded) {
+    showSurfacePanel(landedBody, currentSystemSeed);
+  } else if (!isNowLanded && wasLanded) {
+    hideSurfacePanel();
+  }
+  wasLanded = isNowLanded;
+
+  // Hide surface panel when entering map mode; restore when leaving (if still landed)
+  if (!prevMapActive && mapMode.isActive()) {
+    hideSurfacePanel();
+  } else if (prevMapActive && !mapMode.isActive() && isNowLanded) {
+    showSurfacePanel(landedBody, currentSystemSeed);
+  }
+
+  // Update science counter each frame
+  if (scienceDisplay) {
+    scienceDisplay.textContent = 'Science: ' + getScience();
   }
 
   // Recompute world position after possible transition
@@ -618,6 +646,8 @@ function update(dt) {
     camera.x = ship.x;
     camera.y = ship.y;
     scanPanel.classList.add('hidden');
+    hideSurfacePanel();
+    wasLanded = false;
     resetLanding();
     crashEffect = null;
     landingZoom = 1.0;

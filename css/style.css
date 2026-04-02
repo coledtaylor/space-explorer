@@ -479,3 +479,100 @@ body {
 #scan-panel.hidden {
   display: block;
 }
+
+/* Surface Panel */
+#surface-panel {
+  position: absolute;
+  left: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 280px;
+  padding: 20px 22px;
+  background: rgba(5, 15, 35, 0.9);
+  border: 1px solid rgba(100, 180, 255, 0.2);
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+#surface-panel.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) translateX(-20px);
+}
+
+#surface-body-name {
+  font-size: 20px;
+  font-weight: 400;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+#surface-body-type {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: #4fc3f7;
+  margin-bottom: 10px;
+}
+
+#surface-body-desc {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #99aabb;
+  margin-bottom: 14px;
+}
+
+#surface-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+#surface-scan-btn,
+#surface-sample-btn {
+  flex: 1;
+  padding: 7px 10px;
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  background: transparent;
+  border: 1px solid rgba(100, 180, 255, 0.4);
+  color: #4fc3f7;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+#surface-scan-btn:hover,
+#surface-sample-btn:hover {
+  background: rgba(100, 180, 255, 0.1);
+  border-color: #4fc3f7;
+  box-shadow: 0 0 10px rgba(100, 180, 255, 0.2);
+}
+
+#surface-result {
+  font-size: 13px;
+  line-height: 1.6;
+  min-height: 36px;
+}
+
+#surface-result.result-scan {
+  color: #66ff66;
+  text-shadow: 0 0 6px rgba(100, 255, 100, 0.3);
+}
+
+#surface-result.result-sample {
+  color: #ffd740;
+  text-shadow: 0 0 6px rgba(255, 215, 64, 0.3);
+}
+
+#surface-result.result-repeat {
+  color: #556677;
+}
+
+/* Science display in HUD */
+#science-display {
+  color: #ffd740;
+  text-shadow: 0 0 8px rgba(255, 215, 64, 0.6), 0 0 16px rgba(255, 215, 64, 0.3);
+}
