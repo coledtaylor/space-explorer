@@ -1,5 +1,8 @@
 // Core type definitions for the Space Explorer physics engine
 
+// Re-export landing types for convenience — defined in src/lib/landing.ts
+export type { LandingState, LandingTelemetry } from '../lib/landing.js';
+
 export interface Vec2 {
   x: number;
   y: number;
