@@ -67,6 +67,8 @@ The critical ordering decision: Map/Planning Mode (M3) comes before Landing (M4)
 - [ ] Body rendering visually distinguishes stars, rocky planets, gas giants, and moons
 - [ ] No body orbits overlap or produce immediately unstable configurations
 
+**Linked Feature:** 0002
+
 **Status:** Planned
 
 ---
