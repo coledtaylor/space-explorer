@@ -87,6 +87,8 @@ Minimap renders orbit rings for all planets around the star and orbit rings for 
 ### Task 2: Real Orbital Data in Scan Panel and Moon-Aware UI
 **Type:** auto
 **Sequence:** 1
+**Status:** Complete
+**Completed:** 2026-04-01
 
 <files>
 index.html
@@ -135,12 +137,12 @@ Scan panel displays real orbital data (mass, radius, SOI radius, orbital period,
 - [ ] Minimap shows orbit rings for moons around their parent planet
 - [ ] Moon dots appear on minimap
 - [ ] Clicking a moon in game view opens scan panel with that moon's data
-- [ ] Scan panel shows real mass, radius, SOI radius for planets and moons
-- [ ] Scan panel shows computed orbital period, semi-major axis, eccentricity
-- [ ] Star scan panel shows star-specific data (class, temperature, luminosity)
-- [ ] Location display shows moon name when ship is in moon SOI
-- [ ] Fuel regeneration only triggers near stars (not moons or planets)
-- [ ] System transition boundary works correctly (world-space distance > 4000)
+- [x] Scan panel shows real mass, radius, SOI radius for planets and moons
+- [x] Scan panel shows computed orbital period, semi-major axis, eccentricity
+- [x] Star scan panel shows star-specific data (class, temperature, luminosity)
+- [x] Location display shows moon name when ship is in moon SOI
+- [x] Fuel regeneration only triggers near stars (not moons or planets)
+- [x] System transition boundary works correctly (world-space distance > 4000)
 
 ## Success Criteria
 The minimap visualizes the full three-level system hierarchy with orbit rings at both levels. The scan panel exposes real computed orbital data for every body type. All UI interactions (click, scan, nearest-body, fuel, location, transition) treat moons as first-class citizens with no regressions to existing star/planet behavior.

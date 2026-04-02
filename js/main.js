@@ -20,6 +20,12 @@ const scanName = document.getElementById('scan-name');
 const scanType = document.getElementById('scan-type');
 const scanDesc = document.getElementById('scan-desc');
 const scanDetails = document.getElementById('scan-details');
+const scanMass = document.getElementById('scan-mass');
+const scanRadius = document.getElementById('scan-radius');
+const scanSoiRadius = document.getElementById('scan-soi-radius');
+const scanPeriod = document.getElementById('scan-period');
+const scanSma = document.getElementById('scan-sma');
+const scanEcc = document.getElementById('scan-ecc');
 const locationDisplay = document.getElementById('location-display');
 const coordsDisplay = document.getElementById('coords-display');
 const fuelDisplay = document.getElementById('fuel-display');
@@ -206,14 +212,48 @@ function showScan(body) {
   scanName.textContent = body.name;
   scanType.textContent = body.subtype || body.kind;
   scanDesc.textContent = body.description;
+
+  // Populate scan-details with kind-specific entries
   scanDetails.innerHTML = '';
-  if (body.details) {
+  if (body.kind === 'star' && body.details) {
+    for (const [key, val] of Object.entries(body.details)) {
+      const line = document.createElement('div');
+      line.textContent = `${key}: ${val}`;
+      scanDetails.appendChild(line);
+    }
+  } else if (body.kind === 'anomaly' && body.details) {
     for (const [key, val] of Object.entries(body.details)) {
       const line = document.createElement('div');
       line.textContent = `${key}: ${val}`;
       scanDetails.appendChild(line);
     }
   }
+
+  // Populate orbital data fields
+  scanMass.textContent = body.mass !== undefined ? body.mass.toFixed(0) + ' kg' : '—';
+  scanRadius.textContent = body.radius !== undefined ? body.radius.toFixed(1) + ' km' : '—';
+
+  if (body.kind === 'star') {
+    scanSoiRadius.textContent = '—';
+    scanPeriod.textContent = '—';
+    scanSma.textContent = '—';
+    scanEcc.textContent = '—';
+  } else if (body.orbitalElements) {
+    const { a, e } = body.orbitalElements;
+    const muParent = body.parentBody.mu;
+    const T = 2 * Math.PI * Math.sqrt(a * a * a / muParent);
+
+    scanSoiRadius.textContent = body.soiRadius !== undefined ? body.soiRadius.toFixed(1) + ' km' : '—';
+    scanPeriod.textContent = T.toFixed(1) + ' s';
+    scanSma.textContent = a.toFixed(1) + ' km';
+    scanEcc.textContent = e.toFixed(4);
+  } else {
+    scanSoiRadius.textContent = '—';
+    scanPeriod.textContent = '—';
+    scanSma.textContent = '—';
+    scanEcc.textContent = '—';
+  }
+
   scanPanel.classList.remove('hidden');
 }
 
