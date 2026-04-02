@@ -114,6 +114,8 @@ Port `js/units.js` to `src/lib/units.ts`:
 ### Task 2: Port Orbital Mechanics Modules
 **Type:** auto
 **Sequence:** 2
+**Status:** complete
+**Completed:** 2026-04-02
 
 <files>
 src/lib/orbit.ts
