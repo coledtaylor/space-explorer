@@ -1,6 +1,6 @@
 {
   "statusLine": {
     "type": "command",
-    "command": "node C:/Users/ColeT/.harness/dev/repos/space-explorer/.claude/hooks/statusline.cjs"
+    "command": "node C:/Users/coletaylor/.harness/dev/repos/space-explorer/.claude/hooks/statusline.cjs"
   }
 }

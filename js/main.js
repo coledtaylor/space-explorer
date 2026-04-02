@@ -143,7 +143,7 @@ function loop(timestamp) {
   for (let i = 0; i < steps; i++) {
     time += subDt;
     updateBodyPositions(system, subDt);
-    ship.update(subDt, input, ship.currentSOIBody);
+    ship.update(subDt, input, ship.currentSOIBody, getLandingState().state);
 
     // Auto-drop warp on thrust
     if (ship.thrustActive) resetWarp();
