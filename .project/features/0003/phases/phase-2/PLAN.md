@@ -84,6 +84,8 @@ drawOrbitPath accepts zoom and scales all orbit geometry by it. drawBodyOrbits d
 ### Task 2: Wire body orbit rendering into main.js render loop
 **Type:** auto
 **Sequence:** 2
+**Status:** Complete
+Completed: 2026-04-01
 
 <files>
 js/main.js

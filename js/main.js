@@ -2,7 +2,7 @@ import { Ship } from './ship.js';
 import { Input } from './input.js';
 import { Starfield } from './starfield.js';
 import { generateSystem, updateBodyPositions } from './celestial.js';
-import { drawBody, drawMinimap, setCameraHack, drawOrbitPath } from './renderer.js';
+import { drawBody, drawMinimap, setCameraHack, drawOrbitPath, drawBodyOrbits } from './renderer.js';
 import { checkSOITransition, shipWorldPosition } from './physics.js';
 import { dist } from './utils.js';
 import { MapMode } from './mapmode.js';
@@ -304,6 +304,9 @@ function render() {
   for (const body of sorted) {
     drawBody(ctx, body, effectiveCam, time, zoom);
   }
+
+  // Draw body orbit paths (behind ship orbit)
+  drawBodyOrbits(ctx, system.bodies, effectiveCam, zoom);
 
   // Draw ship's predicted orbit path
   drawOrbitPath(ctx, effectiveCam, ship.orbit, ship.currentSOIBody, zoom);
