@@ -1,12 +1,13 @@
 import Phaser from 'phaser';
 import { FlightScene } from './scenes/FlightScene';
+import { MapScene } from './scenes/MapScene';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   width: window.innerWidth,
   height: window.innerHeight,
   backgroundColor: '#010118',
-  scene: [FlightScene],
+  scene: [FlightScene, MapScene],
   scale: {
     mode: Phaser.Scale.RESIZE,
     parent: 'game-container',

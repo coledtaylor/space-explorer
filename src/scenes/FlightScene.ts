@@ -100,6 +100,7 @@ export class FlightScene extends Phaser.Scene {
     S: Phaser.Input.Keyboard.Key;
     D: Phaser.Input.Keyboard.Key;
   };
+  private mKey!: Phaser.Input.Keyboard.Key;
 
   private starLayers: StarPoint[][] = [];
 
@@ -144,6 +145,7 @@ export class FlightScene extends Phaser.Scene {
       S: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.S),
       D: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D),
     };
+    this.mKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.M);
 
     // Position camera at ship world position immediately (no lerp on first frame)
     const worldPos = this._shipWorldPosition();
@@ -156,6 +158,12 @@ export class FlightScene extends Phaser.Scene {
   update(time: number, delta: number): void {
     const dt = delta / 1000; // convert ms → seconds
     this.elapsedTime += dt;
+
+    // Switch to map view
+    if (Phaser.Input.Keyboard.JustDown(this.mKey)) {
+      this._switchToMapScene();
+      return;
+    }
 
     // Read input
     const input = this._readInput();
@@ -546,6 +554,22 @@ export class FlightScene extends Phaser.Scene {
 
       this.hudGfx.trajectoryGfx.strokePath();
     }
+  }
+
+  private _switchToMapScene(): void {
+    // Persist ship state to the Phaser registry so MapScene (and this scene on resume) can read it
+    this.registry.set('ship.x', this.ship.x);
+    this.registry.set('ship.y', this.ship.y);
+    this.registry.set('ship.vx', this.ship.vx);
+    this.registry.set('ship.vy', this.ship.vy);
+    this.registry.set('ship.angle', this.ship.angle);
+    this.registry.set('ship.fuel', this.ship.fuel);
+
+    // Pass live references via scene data for MapScene to use immediately
+    this.scene.start('MapScene', {
+      soiBody: this.soiBody,
+      system: this.system,
+    });
   }
 
   private _updateHud(): void {
