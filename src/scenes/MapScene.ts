@@ -39,11 +39,24 @@ const ORBIT_SEGMENTS = 120;
 const SHIP_ORBIT_ALPHA = 0.7;
 const SHIP_ORBIT_COLOR = 0x44ddff;
 const SHIP_MARKER_COLOR = 0x00ffcc;
+// Screen-pixel sizes for markers (compensated by 1/zoom at render time)
+const SHIP_MARKER_RADIUS_PX = 6;
+const SHIP_VELOCITY_ARROW_LENGTH_PX = 32;
+// Minimum pixel size for planet/moon/star markers at any zoom
+const MIN_PLANET_MARKER_PX = 5;
+const MIN_MOON_MARKER_PX = 3;
+const MIN_STAR_MARKER_PX = 10;
+// Legacy constants kept for non-zoom-compensated uses
 const SHIP_MARKER_RADIUS = 6;
 const SHIP_VELOCITY_ARROW_LENGTH = 32;
 const PLANET_MARKER_RADIUS = 5;
 const MOON_MARKER_RADIUS = 3;
 const STAR_MARKER_RADIUS = 18;
+// SOI boundary circles on the map
+const SOI_CIRCLE_COLOR = 0x8899aa;
+const SOI_CIRCLE_ALPHA = 0.15;
+// Body label font size in screen pixels (scaled by 1/zoom for constant screen size)
+const BODY_LABEL_FONT_PX = 11;
 const HUD_FONT_FAMILY = '"Segoe UI", system-ui, sans-serif';
 const HUD_COLOR_PRIMARY = '#b0d8ff';
 const HUD_COLOR_MUTED = '#6090b0';
@@ -351,8 +364,12 @@ export class MapScene extends Phaser.Scene {
     const orbitWorldX = cosOmega * (xPerif + a * e) - sinOmega * yPerif + bodyX;
     const orbitWorldY = sinOmega * (xPerif + a * e) + cosOmega * yPerif + bodyY;
 
-    // Distance from click to nearest point on orbit (world units, unscaled by zoom)
-    const hitTolerance = ORBIT_HIT_TOLERANCE / zoom;
+    // Distance from click to nearest point on orbit in world units.
+    // At zoom 0.001 the uncapped tolerance (12/0.001 = 12,000 gu) would span a large fraction
+    // of the system, making accidental node placement common. Cap it at a reasonable world-space
+    // distance (e.g. 2000 gu ~ a few times the SOI of a planet).
+    const MAX_HIT_TOLERANCE_WU = 2000;
+    const hitTolerance = Math.min(ORBIT_HIT_TOLERANCE / zoom, MAX_HIT_TOLERANCE_WU);
     const dx = world.x - orbitWorldX;
     const dy = world.y - orbitWorldY;
     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -520,43 +537,93 @@ export class MapScene extends Phaser.Scene {
     );
   }
 
-  // Draw the star, planets, and moons as colored circles at current positions
+  // Draw the star, planets, and moons as colored circles at current positions.
+  // Marker radii are zoom-compensated so they remain at least MIN_*_MARKER_PX screen pixels.
+  // SOI boundary circles and body name labels are also rendered here.
   private _renderBodies(): void {
     this.bodyGfx.clear();
 
+    const zoom = this.cameras.main.zoom;
     const star = this.system.star;
+
+    // Zoom-compensated star radius: at least MIN_STAR_MARKER_PX screen pixels, or true body radius
+    const starR = Math.max(star.radius ?? STAR_MARKER_RADIUS, MIN_STAR_MARKER_PX / zoom);
 
     // Star glow
     const starColor = Phaser.Display.Color.HexStringToColor(
       this._hueToHexString(star.hue, 0.8, 0.6),
     ).color;
     this.bodyGfx.fillStyle(starColor, 0.18);
-    this.bodyGfx.fillCircle(0, 0, STAR_MARKER_RADIUS * 2.5);
+    this.bodyGfx.fillCircle(0, 0, starR * 2.5);
 
     // Star body
     this.bodyGfx.fillStyle(starColor, 1.0);
-    this.bodyGfx.fillCircle(0, 0, STAR_MARKER_RADIUS);
+    this.bodyGfx.fillCircle(0, 0, starR);
+
+    // Star name label
+    this._drawBodyLabel(star.name, 0, 0, starR, zoom);
 
     // Planets
     for (const planet of this.system.planets) {
       const planetColor = Phaser.Display.Color.HexStringToColor(
         this._hueToHexString(planet.hue, 0.5, 0.55),
       ).color;
+      const planetR = Math.max(planet.radius ?? PLANET_MARKER_RADIUS, MIN_PLANET_MARKER_PX / zoom);
+
+      // SOI boundary circle (faint, for navigation reference)
+      if (planet.soiRadius !== undefined && planet.soiRadius > 0) {
+        this.bodyGfx.lineStyle(1 / zoom, SOI_CIRCLE_COLOR, SOI_CIRCLE_ALPHA);
+        this.bodyGfx.strokeCircle(planet.x, planet.y, planet.soiRadius);
+      }
+
       this.bodyGfx.fillStyle(planetColor, 1.0);
-      this.bodyGfx.fillCircle(planet.x, planet.y, PLANET_MARKER_RADIUS);
+      this.bodyGfx.fillCircle(planet.x, planet.y, planetR);
+
+      // Planet name label
+      this._drawBodyLabel(planet.name, planet.x, planet.y, planetR, zoom);
 
       // Moons
       for (const moon of planet.moons) {
         const moonColor = Phaser.Display.Color.HexStringToColor(
           this._hueToHexString(moon.hue, 0.3, 0.5),
         ).color;
+        const moonR = Math.max(moon.radius ?? MOON_MARKER_RADIUS, MIN_MOON_MARKER_PX / zoom);
         this.bodyGfx.fillStyle(moonColor, 0.85);
-        this.bodyGfx.fillCircle(moon.x, moon.y, MOON_MARKER_RADIUS);
+        this.bodyGfx.fillCircle(moon.x, moon.y, moonR);
+
+        // Moon name label (only at medium zoom to avoid clutter)
+        this._drawBodyLabel(moon.name, moon.x, moon.y, moonR, zoom);
       }
     }
   }
 
-  // Draw ship marker and velocity arrow
+  // Draw a body name label at a constant screen size, offset above the body marker.
+  // Uses Phaser Graphics to render text by drawing it via a temporary Text object approach —
+  // but since Graphics doesn't support text, we use a pooled approach: store Text objects
+  // keyed by body name and update their position/scale each frame.
+  private _bodyLabels: Map<string, Phaser.GameObjects.Text> = new Map();
+
+  private _drawBodyLabel(name: string, wx: number, wy: number, markerR: number, zoom: number): void {
+    let label = this._bodyLabels.get(name);
+    if (label === undefined) {
+      label = this.add.text(0, 0, name, {
+        fontFamily: HUD_FONT_FAMILY,
+        fontSize: `${BODY_LABEL_FONT_PX}px`,
+        color: '#aaccee',
+        stroke: '#000810',
+        strokeThickness: 2,
+      }).setDepth(3).setOrigin(0, 1);
+      this._bodyLabels.set(name, label);
+    }
+
+    // Position label just above the marker, in world space, scaled by 1/zoom for constant screen size
+    label.setPosition(wx + markerR * 1.1, wy - markerR * 1.1);
+    label.setScale(1 / zoom);
+    label.setVisible(true);
+  }
+
+  // Draw ship marker and velocity arrow.
+  // All sizes are compensated by 1/zoom so they appear as constant screen-pixel sizes.
   private _renderShip(): void {
     this.shipGfx.clear();
 
@@ -567,13 +634,18 @@ export class MapScene extends Phaser.Scene {
 
     if (shipX === undefined || shipY === undefined) return;
 
+    const zoom = this.cameras.main.zoom;
+    const markerR = SHIP_MARKER_RADIUS_PX / zoom;
+    const outerR = (SHIP_MARKER_RADIUS_PX + 4) / zoom;
+    const lineW = 2 / zoom;
+
     // Outer ring for visibility
-    this.shipGfx.lineStyle(2, SHIP_MARKER_COLOR, 0.5);
-    this.shipGfx.strokeCircle(shipX, shipY, SHIP_MARKER_RADIUS + 4);
+    this.shipGfx.lineStyle(lineW, SHIP_MARKER_COLOR, 0.5);
+    this.shipGfx.strokeCircle(shipX, shipY, outerR);
 
     // Ship marker dot
     this.shipGfx.fillStyle(SHIP_MARKER_COLOR, 1.0);
-    this.shipGfx.fillCircle(shipX, shipY, SHIP_MARKER_RADIUS);
+    this.shipGfx.fillCircle(shipX, shipY, markerR);
 
     // Velocity direction arrow (skip if velocity is essentially zero)
     if (shipVx !== undefined && shipVy !== undefined) {
@@ -581,17 +653,18 @@ export class MapScene extends Phaser.Scene {
       if (speed > 0.01) {
         const nx = shipVx / speed;
         const ny = shipVy / speed;
-        const arrowEndX = shipX + nx * SHIP_VELOCITY_ARROW_LENGTH;
-        const arrowEndY = shipY + ny * SHIP_VELOCITY_ARROW_LENGTH;
+        const arrowLen = SHIP_VELOCITY_ARROW_LENGTH_PX / zoom;
+        const arrowEndX = shipX + nx * arrowLen;
+        const arrowEndY = shipY + ny * arrowLen;
 
-        this.shipGfx.lineStyle(2, SHIP_MARKER_COLOR, 0.85);
+        this.shipGfx.lineStyle(lineW, SHIP_MARKER_COLOR, 0.85);
         this.shipGfx.beginPath();
         this.shipGfx.moveTo(shipX, shipY);
         this.shipGfx.lineTo(arrowEndX, arrowEndY);
         this.shipGfx.strokePath();
 
-        // Arrowhead
-        const headLen = 6;
+        // Arrowhead (constant screen-pixel size)
+        const headLen = 6 / zoom;
         const headAngle = Math.PI / 6;
         const angle = Math.atan2(ny, nx);
         this.shipGfx.beginPath();
@@ -667,8 +740,8 @@ export class MapScene extends Phaser.Scene {
       };
 
       const segments = propagateTrajectory(shipState, this.system, {
-        maxTime: 800,
-        stepSize: 2.0,
+        maxTime: 50000,
+        stepSize: 10.0,
         maxSegments: 3,
         simBaseTime: 0,
       });
@@ -676,9 +749,11 @@ export class MapScene extends Phaser.Scene {
       for (const seg of segments) {
         if (seg.points.length < 2) continue;
 
-        // propagateTrajectory returns world-space points via virtualWorldPosition,
-        // which adds the SOI body's current world offset internally.
-        this._drawDashedPath(seg.points, TRAJECTORY_COLOR, TRAJECTORY_ALPHA, TRAJECTORY_LINE_WIDTH);
+        // Points are SOI-relative — convert to world-space using current body positions
+        const bodyX = seg.soiBody.x;
+        const bodyY = seg.soiBody.y;
+        const worldPoints = seg.points.map(pt => ({ x: pt.x + bodyX, y: pt.y + bodyY }));
+        this._drawDashedPath(worldPoints, TRAJECTORY_COLOR, TRAJECTORY_ALPHA, TRAJECTORY_LINE_WIDTH);
 
         // Draw SOI transition markers
         for (const marker of seg.markers) {
@@ -689,23 +764,24 @@ export class MapScene extends Phaser.Scene {
         }
       }
 
-      // Draw a thin connector from the node world position to the trajectory start point.
-      // propagateTrajectory returns world-space points (virtualWorldPosition already applied
-      // the SOI body offset), so no additional offset is needed here.
+      // Draw a thin connector from the node world position to the trajectory start point
       if (segments.length > 0 && (segments[0]?.points.length ?? 0) > 0) {
-        const firstPoint = segments[0]!.points[0]!;
+        const firstSeg = segments[0]!;
+        const firstPoint = firstSeg.points[0]!;
+        const firstWorldX = firstPoint.x + firstSeg.soiBody.x;
+        const firstWorldY = firstPoint.y + firstSeg.soiBody.y;
         const nodeWorld = getNodeWorldPosition(node);
 
         this.trajectoryGfx.lineStyle(1, TRAJECTORY_COLOR, 0.4);
         this.trajectoryGfx.beginPath();
         this.trajectoryGfx.moveTo(nodeWorld.x, nodeWorld.y);
-        this.trajectoryGfx.lineTo(firstPoint.x, firstPoint.y);
+        this.trajectoryGfx.lineTo(firstWorldX, firstWorldY);
         this.trajectoryGfx.strokePath();
       }
     }
   }
 
-  // Draw a dashed line through an array of world-space Vec2 points.
+  // Draw a dashed line through an array of Vec2 points (caller converts to world-space).
   // Uses cumulative distance along the path to determine dash/gap phases.
   private _drawDashedPath(points: Vec2[], color: number, alpha: number, lineWidth: number): void {
     if (points.length < 2) return;

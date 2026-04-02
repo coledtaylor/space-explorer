@@ -81,8 +81,8 @@ export function propagateTrajectory(
   system: StarSystem,
   options?: TrajectoryOptions,
 ): TrajectorySegment[] {
-  const maxTime = options?.maxTime ?? 600;
-  const baseStep = options?.stepSize ?? 1.0;
+  const maxTime = options?.maxTime ?? 50000;
+  const baseStep = options?.stepSize ?? 10.0;
   const maxSegments = options?.maxSegments ?? 3;
   // simBaseTime is the game's current elapsed time, for predicting body positions
   const simBaseTime = options?.simBaseTime ?? 0;
@@ -105,6 +105,10 @@ export function propagateTrajectory(
   let bestApproach: Record<string, { dist: number; x: number; y: number; body: string }> = {};
   const MAX_CA_MARKERS = 1; // max closest-approach markers per segment
 
+  // Minimum SOI-relative distance² between recorded points (avoids over-dense clusters)
+  // Scaled up proportionally with KSP-scale distances (was 1 at 1x scale, 100 at 10x scale)
+  const MIN_POINT_DIST_SQ = 100; // 10 game-units apart minimum in SOI-relative space
+
   // Start first segment
   let currentSegment: TrajectorySegment = {
     points: [],
@@ -113,11 +117,10 @@ export function propagateTrajectory(
     markers: [],
   };
 
-  // Record the initial world-space point
-  const initWorld = virtualWorldPosition(px, py, currentSOIBody, simBaseTime);
-  currentSegment.points.push({ x: initWorld.x, y: initWorld.y });
-
-  let pointCounter = 0; // throttle point recording for smoother lines
+  // Record the initial SOI-relative point
+  currentSegment.points.push({ x: px, y: py });
+  let lastRecordedX = px;
+  let lastRecordedY = py;
 
   while (elapsedSim < maxTime && segments.length < maxSegments + 1) {
     // Adaptive step size: smaller when close to SOI body center
@@ -221,15 +224,10 @@ export function propagateTrajectory(
             markers: [],
           };
 
-          // Record entry marker on new segment
-          const entryWorldPos = virtualWorldPosition(px, py, currentSOIBody, newSimTime);
-          const entryMarker: TrajectoryMarker = {
-            type: 'soi-entry',
-            x: entryWorldPos.x,
-            y: entryWorldPos.y,
-          };
-          currentSegment.markers.push(entryMarker);
-          currentSegment.points.push({ x: entryWorldPos.x, y: entryWorldPos.y });
+          // Record entry point in SOI-relative coordinates
+          currentSegment.points.push({ x: px, y: py });
+          lastRecordedX = px;
+          lastRecordedY = py;
 
           prevDistances = {};
           bestApproach = {};
@@ -287,14 +285,10 @@ export function propagateTrajectory(
             markers: [],
           };
 
-          const entryWorldPos = virtualWorldPosition(px, py, currentSOIBody, newSimTime);
-          const entryMarker: TrajectoryMarker = {
-            type: 'soi-entry',
-            x: entryWorldPos.x,
-            y: entryWorldPos.y,
-          };
-          currentSegment.markers.push(entryMarker);
-          currentSegment.points.push({ x: entryWorldPos.x, y: entryWorldPos.y });
+          // Record entry point in SOI-relative coordinates
+          currentSegment.points.push({ x: px, y: py });
+          lastRecordedX = px;
+          lastRecordedY = py;
 
           prevDistances = {};
           bestApproach = {};
@@ -342,14 +336,10 @@ export function propagateTrajectory(
             markers: [],
           };
 
-          const entryWorldPos = virtualWorldPosition(px, py, currentSOIBody, newSimTime);
-          const entryMarker: TrajectoryMarker = {
-            type: 'soi-entry',
-            x: entryWorldPos.x,
-            y: entryWorldPos.y,
-          };
-          currentSegment.markers.push(entryMarker);
-          currentSegment.points.push({ x: entryWorldPos.x, y: entryWorldPos.y });
+          // Record entry point in SOI-relative coordinates
+          currentSegment.points.push({ x: px, y: py });
+          lastRecordedX = px;
+          lastRecordedY = py;
 
           prevDistances = {};
           bestApproach = {};
@@ -400,26 +390,25 @@ export function propagateTrajectory(
           markers: [],
         };
 
-        const entryWorldPos = virtualWorldPosition(px, py, currentSOIBody, newSimTime);
-        const entryMarker: TrajectoryMarker = {
-          type: 'soi-entry',
-          x: entryWorldPos.x,
-          y: entryWorldPos.y,
-        };
-        currentSegment.markers.push(entryMarker);
-        currentSegment.points.push({ x: entryWorldPos.x, y: entryWorldPos.y });
+        // Record entry point in SOI-relative coordinates
+        currentSegment.points.push({ x: px, y: py });
+        lastRecordedX = px;
+        lastRecordedY = py;
 
         prevDistances = {};
         transitioned = true;
       }
     }
 
-    // Add current world-space point to segment (skip if we just transitioned — already added entry)
-    // Throttle point density: record every 3rd point to smooth out jitter
-    pointCounter++;
-    if (!transitioned && pointCounter % 3 === 0) {
-      const worldPos = virtualWorldPosition(px, py, currentSOIBody, newSimTime);
-      currentSegment.points.push({ x: worldPos.x, y: worldPos.y });
+    // Add current SOI-relative point to segment (skip if we just transitioned — already added entry)
+    if (!transitioned) {
+      const ddx = px - lastRecordedX;
+      const ddy = py - lastRecordedY;
+      if (ddx * ddx + ddy * ddy >= MIN_POINT_DIST_SQ) {
+        currentSegment.points.push({ x: px, y: py });
+        lastRecordedX = px;
+        lastRecordedY = py;
+      }
     }
 
     // Closest approach tracking — check all bodies except current SOI body
@@ -460,6 +449,12 @@ export function propagateTrajectory(
 
     // Stop if we have exceeded the segment limit
     if (segments.length >= maxSegments + 1) break;
+  }
+
+  // Always record the final propagation point so the trajectory doesn't end short
+  const lastPt = currentSegment.points[currentSegment.points.length - 1];
+  if (lastPt && (lastPt.x !== px || lastPt.y !== py)) {
+    currentSegment.points.push({ x: px, y: py });
   }
 
   // Flush best closest-approach markers into the current segment
