@@ -111,4 +111,9 @@ export class CelestialBody extends GameObjects.Graphics {
   get drawRadius(): number {
     return this.visualRadius;
   }
+
+  /** Exposes body config for physics calculations (e.g. mass lookup). */
+  get bodyConfig(): CelestialBodyConfig {
+    return this.config;
+  }
 }
