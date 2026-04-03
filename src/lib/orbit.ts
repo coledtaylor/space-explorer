@@ -1,134 +1,78 @@
-import type { Vec2, OrbitalElements } from '../types/index.js';
-import { vec2Mag, vec2Scale, vec2Sub, vec2Dot } from './utils.js';
+// Orbital position math — pure, framework-agnostic.
+// Computes circular-orbit positions and resolves world-space coordinates
+// by walking the parent chain. No Phaser imports.
 
-// Compute orbital elements from state vector (position and velocity relative to SOI body at origin)
-export function computeOrbitalElements(pos: Vec2, vel: Vec2, mu: number): OrbitalElements {
-  const r = vec2Mag(pos);
-  const v = vec2Mag(vel);
+import type { Vec2, SolarSystemConfig } from '../types/index.js';
 
-  // Specific orbital energy
-  const epsilon = v * v / 2 - mu / r;
+const TWO_PI = 2 * Math.PI;
 
-  // Semi-major axis
-  const a = -mu / (2 * epsilon);
-
-  // Angular momentum (scalar, 2D cross product)
-  const h = pos.x * vel.y - pos.y * vel.x;
-
-  // Eccentricity vector
-  const dotPV = vec2Dot(pos, vel);
-  const eVec: Vec2 = {
-    x: ((v * v - mu / r) * pos.x - dotPV * vel.x) / mu,
-    y: ((v * v - mu / r) * pos.y - dotPV * vel.y) / mu,
-  };
-  const e = vec2Mag(eVec);
-
-  // Argument of periapsis
-  const omega = Math.atan2(eVec.y, eVec.x);
-
-  // True anomaly at epoch: angle from periapsis direction to current position
-  const nu0 = Math.atan2(pos.y, pos.x) - omega;
-
-  // Orbital period (only meaningful for elliptical orbits, a > 0)
-  const T = a > 0 ? 2 * Math.PI * Math.sqrt(a * a * a / mu) : undefined;
-
-  // Suppress unused variable warning — h is computed for completeness (angular momentum sign)
-  void h;
-
-  return { a, e, omega, nu0, T, epsilon };
-}
-
-// Compute state vector from orbital elements at a given true anomaly
-// Returns { pos: Vec2, vel: Vec2 } in the inertial frame
-export function stateFromOrbitalElements(
-  a: number,
-  e: number,
-  omega: number,
-  nu: number,
-  mu: number,
-): { pos: Vec2; vel: Vec2 } {
-  // Semi-latus rectum
-  const p = a * (1 - e * e);
-
-  // Radius at this true anomaly
-  const r = p / (1 + e * Math.cos(nu));
-
-  // Position in perifocal frame
-  const xPerif = r * Math.cos(nu);
-  const yPerif = r * Math.sin(nu);
-
-  // Velocity in perifocal frame
-  const sqrtMuOverP = Math.sqrt(mu / p);
-  const vxPerif = -sqrtMuOverP * Math.sin(nu);
-  const vyPerif = sqrtMuOverP * (e + Math.cos(nu));
-
-  // Rotate from perifocal to inertial frame by omega
-  const cosO = Math.cos(omega);
-  const sinO = Math.sin(omega);
-
-  const pos: Vec2 = {
-    x: cosO * xPerif - sinO * yPerif,
-    y: sinO * xPerif + cosO * yPerif,
-  };
-  const vel: Vec2 = {
-    x: cosO * vxPerif - sinO * vyPerif,
-    y: sinO * vxPerif + cosO * vyPerif,
-  };
-
-  return { pos, vel };
-}
-
-// Apoapsis radius (farthest point from focus)
-export function computeApoapsisRadius(a: number, e: number): number {
-  return a * (1 + e);
-}
-
-// Periapsis radius (closest point to focus)
-export function computePeriapsisRadius(a: number, e: number): number {
-  return a * (1 - e);
-}
-
-// Propagate true anomaly forward by time t using Kepler's equation (elliptical orbits only)
-export function trueAnomalyAtTime(t: number, a: number, e: number, mu: number, nu0: number): number {
-  // Mean motion
-  const n = Math.sqrt(mu / (a * a * a));
-
-  // Convert nu0 to eccentric anomaly E0
-  // tan(E/2) = sqrt((1-e)/(1+e)) * tan(nu/2)
-  const tanHalfNu0 = Math.tan(nu0 / 2);
-  const E0 = 2 * Math.atan(Math.sqrt((1 - e) / (1 + e)) * tanHalfNu0);
-
-  // Convert E0 to mean anomaly M0
-  const M0 = E0 - e * Math.sin(E0);
-
-  // Advance mean anomaly
-  const M = M0 + n * t;
-
-  // Solve Kepler's equation M = E - e*sin(E) via Newton-Raphson
-  let E = M;
-  for (let i = 0; i < 50; i++) {
-    const dE = (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));
-    E -= dE;
-    if (Math.abs(dE) < 1e-12) break;
+/**
+ * Returns the position on a circular orbit at time `t`.
+ *
+ * Orbit starts at (radius, 0) at t=0 and advances counter-clockwise.
+ * Using cosine/sine maps the orbit: t=0 → (r,0), t=T/4 → (0,r), t=T/2 → (-r,0).
+ *
+ * Returns (0, 0) for zero orbital radius — used for the central star which
+ * has no orbit.
+ */
+export function getOrbitalPosition(
+  orbitalRadius: number,
+  orbitalPeriod: number,
+  time: number,
+): Vec2 {
+  if (orbitalRadius === 0) {
+    return { x: 0, y: 0 };
   }
 
-  // Convert E back to true anomaly
-  // tan(nu/2) = sqrt((1+e)/(1-e)) * tan(E/2)
-  const nu = 2 * Math.atan(Math.sqrt((1 + e) / (1 - e)) * Math.tan(E / 2));
+  // Avoid division-by-zero for bodies with undefined period.
+  if (orbitalPeriod === 0) {
+    return { x: orbitalRadius, y: 0 };
+  }
 
-  return nu;
+  const angle = (TWO_PI * time) / orbitalPeriod;
+
+  return {
+    x: orbitalRadius * Math.cos(angle),
+    y: orbitalRadius * Math.sin(angle),
+  };
 }
 
-// Sphere of influence radius (Hill sphere approximation)
-export function computeSOIRadius(bodyMass: number, parentMass: number, orbitalRadius: number): number {
-  return orbitalRadius * Math.pow(bodyMass / parentMass, 0.4);
-}
+/**
+ * Returns the absolute world-space position of a celestial body at time `t`
+ * by recursively summing parent offsets up the hierarchy.
+ *
+ * A body with no `parentId` (the central star) is at the world origin.
+ * A planet's world position is its own orbital position relative to the star.
+ * A moon's world position is the planet's world position plus the moon's own
+ * orbital position — this chaining continues for any depth of hierarchy.
+ */
+export function getWorldPosition(
+  bodyId: string,
+  config: SolarSystemConfig,
+  time: number,
+): Vec2 {
+  const body = config.bodies[bodyId];
 
-// Gravitational acceleration vector on ship due to a body
-// Returns acceleration Vec2 pointing from ship toward body
-export function gravityAcceleration(shipPos: Vec2, bodyPos: Vec2, mu: number): Vec2 {
-  const rVec = vec2Sub(shipPos, bodyPos);
-  const r = vec2Mag(rVec);
-  // a = -mu/r^3 * rVec  (rVec points ship→body direction when negated)
-  return vec2Scale(rVec, -mu / (r * r * r));
+  if (body === undefined) {
+    return { x: 0, y: 0 };
+  }
+
+  const ownOrbitalPos = getOrbitalPosition(
+    body.orbitalRadius,
+    body.orbitalPeriod,
+    time,
+  );
+
+  // Base case: no parent means this body is at the solar system origin.
+  if (body.parentId === undefined) {
+    return ownOrbitalPos;
+  }
+
+  // Recursive case: add parent's world-space position to our orbital offset.
+  const parentWorldPos = getWorldPosition(body.parentId, config, time);
+
+  return {
+    x: parentWorldPos.x + ownOrbitalPos.x,
+    y: parentWorldPos.y + ownOrbitalPos.y,
+  };
 }
