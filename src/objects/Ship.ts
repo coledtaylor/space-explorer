@@ -1,10 +1,10 @@
 import { GameObjects, Scene } from 'phaser';
-
-const THRUST_ACCELERATION = 0.0003; // pixels per ms^2
-const ROTATION_SPEED = 0.003;       // radians per ms
-
-const SHIP_HEIGHT = 20;
-const SHIP_HALF_WIDTH = 8;
+import {
+  THRUST_ACCELERATION,
+  ROTATION_SPEED,
+  SHIP_HEIGHT,
+  SHIP_HALF_WIDTH,
+} from '../lib/scaleConfig.js';
 
 export class Ship extends GameObjects.Graphics {
   private vx: number = 0;
@@ -33,6 +33,12 @@ export class Ship extends GameObjects.Graphics {
       bottomLeft.x, bottomLeft.y,
       bottomRight.x, bottomRight.y,
     );
+  }
+
+  /** Sets the ship's velocity directly. Used for initial orbital velocity. */
+  setVelocity(vx: number, vy: number): void {
+    this.vx = vx;
+    this.vy = vy;
   }
 
   applyThrust(delta: number): void {

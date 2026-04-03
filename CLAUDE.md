@@ -4,53 +4,38 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Space Explorer is a TypeScript browser game built with Phaser 4 and Vite. Run `npm run dev` to start the dev server.
-
-## Architecture
-
-The game uses Phaser 4 with TypeScript. Vite handles bundling and dev serving.
-
-**Module structure:**
-
-```
-src/
-├── main.ts                 Game config, Phaser bootstrap, start button wiring
-├── scenes/
-│   ├── BootScene.ts        Asset loading and initial setup
-│   ├── FlightScene.ts      Main flight gameplay with HUD rendering
-│   ├── MapScene.ts         Orbital map view with maneuver nodes
-│   ├── LandingScene.ts     Landing sequence
-│   └── SurfaceScene.ts     Surface exploration
-├── objects/
-│   ├── Ship.ts             Ship physics and Phaser graphics rendering
-│   └── CelestialBody.ts    Celestial body rendering in Phaser
-├── lib/
-│   ├── celestial.ts        Procedural star system generation (seeded RNG)
-│   ├── orbit.ts            Orbital mechanics calculations
-│   ├── physics.ts          Ship physics and SOI transitions
-│   ├── trajectory.ts       Trajectory propagation
-│   ├── maneuver.ts         Maneuver node handling
-│   ├── landing.ts          Landing mechanics
-│   ├── surface.ts          Surface interaction
-│   ├── timewarp.ts         Time warp controls
-│   ├── units.ts            Unit constants
-│   └── utils.ts            Vector math, HSL conversion
-└── types/
-    └── index.ts            Shared type definitions
-```
-
-**Key patterns:**
-- Phaser scenes manage game state and rendering. DOM overlay (`#ui-overlay` in index.html) provides HUD panels styled via CSS.
-- `lib/` modules are pure logic with no Phaser dependency — testable independently.
-- `objects/` contains Phaser game objects that combine rendering with domain logic.
-- Celestial bodies use TypeScript discriminated unions (`kind` field) defined in `types/index.ts`.
-- Procedural generation uses a deterministic seeded RNG in `lib/utils.ts`.
+Space Explorer is a TypeScript browser game built with Phaser 4 and Vite.
 
 ## Development
 
 - `npm install` — install dependencies
 - `npm run dev` — start Vite dev server
 - `npm run build` — production build to `dist/`
+
+## Phaser Documentation (MUST USE)
+
+**Before planning or implementing ANY Phaser-specific feature, you MUST search the official documentation and examples.** Do not guess or assume how Phaser APIs work based on method names or type signatures.
+
+**Resources:**
+- Phaser Docs: https://docs.phaser.io/
+- API Reference: https://docs.phaser.io/api-documentation/4.0.0-rc.6/api-documentation
+- Examples: https://labs.phaser.io/
+- GitHub: https://github.com/phaserjs/phaser
+
+**When to search:**
+- Any camera operation (zoom, follow, scroll, viewports, multiple cameras)
+- Any input handling (keyboard, mouse, pointer, wheel events)
+- Any rendering technique (graphics, text, sprites, containers, depth)
+- Any scene lifecycle question (create, update, scene transitions)
+- Any time you're unsure how a Phaser API behaves
+
+**How to search:**
+- Use WebSearch with queries like "Phaser 4 [feature] site:docs.phaser.io" or "Phaser [feature] example"
+- Check the API reference for method signatures and behavior
+- Look at examples for working patterns
+- When docs are sparse, search the Phaser discourse forum for community solutions
+
+**This is mandatory, not optional.** Phaser 4 is a release candidate with behaviors that differ from Phaser 3. A 30-second search prevents multiple failed iterations.
 
 ## Code Quality Standards (HIGHEST PRIORITY)
 
@@ -74,3 +59,4 @@ src/
 - If implementation feels hacky, stop and redesign before continuing
 - Each feature phase includes a code quality review before completion
 - Prefer testable pure functions over stateful classes where possible
+- Write tests to prove things are working as expected

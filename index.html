@@ -1,79 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Space Explorer</title>
-  <link rel="stylesheet" href="css/style.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; }
+  </style>
 </head>
 <body>
-  <div id="ui-overlay">
-    <div id="hud">
-      <div id="hud-left">
-        <span id="location-display">Location: Sol System</span>
-        <span id="coords-display">x: 0 y: 0</span>
-        <span id="map-indicator" class="hidden">MAP</span>
-      </div>
-      <div id="hud-right">
-        <span id="fuel-display">Fuel: 100%</span>
-        <span id="speed-display">Speed: 0</span>
-        <span id="warp-display" class="hidden">WARP 1x</span>
-      </div>
-    </div>
-    <div id="minimap">
-      <canvas id="minimap-canvas" width="160" height="160"></canvas>
-    </div>
-    <div id="start-screen">
-      <h1>Space Explorer</h1>
-      <p>Navigate the cosmos. Discover planets, stars, and anomalies.</p>
-      <button id="start-btn">Launch</button>
-      <div class="controls-hint">
-        <p>W / Up — Prograde thrust</p>
-        <p>S / Down — Retrograde thrust</p>
-        <p>A / D — Rotate ship</p>
-        <p>Mouse — Aim</p>
-        <p>E — Scan</p>
-        <p>M — Map View</p>
-      </div>
-    </div>
-    <div id="orbit-hud">
-      <div class="orbit-row"><span class="orbit-label">ALT</span><span id="alt-display">0</span><span class="orbit-unit">km</span></div>
-      <div class="orbit-row"><span class="orbit-label">VEL</span><span id="vel-display">0</span><span class="orbit-unit">km/s</span></div>
-      <div class="orbit-row"><span class="orbit-label">AP</span><span id="ap-display">0</span><span class="orbit-unit">km</span></div>
-      <div class="orbit-row"><span class="orbit-label">PE</span><span id="pe-display">0</span><span class="orbit-unit">km</span></div>
-      <div class="orbit-row"><span class="orbit-label">T</span><span id="period-display">0</span><span class="orbit-unit">s</span></div>
-      <div class="orbit-row"><span class="orbit-label">ECC</span><span id="ecc-display">0</span></div>
-      <div class="orbit-row"><span class="orbit-label">SOI</span><span id="soi-display">Star</span></div>
-    </div>
-    <div id="maneuver-info" class="hidden">
-      <div class="maneuver-row">
-        <span class="maneuver-label">DV</span>
-        <span id="maneuver-dv" class="maneuver-value">0.0 m/s</span>
-      </div>
-    </div>
-    <div id="burn-guide" class="hidden">
-      <div class="burn-guide-header">BURN GUIDANCE</div>
-      <div class="burn-guide-row"><span class="burn-guide-label">T-BURN</span><span id="burn-countdown">--:--</span></div>
-      <div class="burn-guide-row"><span class="burn-guide-label">dV REM</span><span id="burn-dv-remaining">0</span><span class="burn-guide-unit">m/s</span></div>
-      <div class="burn-guide-row"><span class="burn-guide-label">STATUS</span><span id="burn-status">IDLE</span></div>
-    </div>
-    <div id="scan-panel" class="hidden">
-      <button id="scan-close">&times;</button>
-      <h2 id="scan-name"></h2>
-      <p id="scan-type"></p>
-      <p id="scan-desc"></p>
-      <div id="scan-details"></div>
-      <div id="scan-orbital">
-        <div class="scan-orbital-row"><span class="scan-orbital-label">Mass</span><span id="scan-mass" class="scan-orbital-value">—</span></div>
-        <div class="scan-orbital-row"><span class="scan-orbital-label">Radius</span><span id="scan-radius" class="scan-orbital-value">—</span></div>
-        <div class="scan-orbital-row"><span class="scan-orbital-label">SOI Radius</span><span id="scan-soi-radius" class="scan-orbital-value">—</span></div>
-        <div class="scan-orbital-row"><span class="scan-orbital-label">Orbital Period</span><span id="scan-period" class="scan-orbital-value">—</span></div>
-        <div class="scan-orbital-row"><span class="scan-orbital-label">Semi-Major Axis</span><span id="scan-sma" class="scan-orbital-value">—</span></div>
-        <div class="scan-orbital-row"><span class="scan-orbital-label">Eccentricity</span><span id="scan-ecc" class="scan-orbital-value">—</span></div>
-      </div>
-    </div>
-  </div>
-  <div id="game-container"></div>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

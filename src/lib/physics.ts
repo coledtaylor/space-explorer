@@ -2,11 +2,10 @@
 // All functions are stateless and testable in isolation. No Phaser imports.
 
 import type { Vec2, CelestialBodyConfig } from '../types/index.js';
-
-// KSP-scale gravitational constant. Real SI value is ~6.674e-11 N·m²/kg².
-// KSP inflates G to make orbital mechanics feel responsive at compressed scales
-// (KSP distances are ~10x smaller than real-world, masses similarly tuned).
-const G = 6.674e-11;
+import {
+  GRAVITATIONAL_CONSTANT as G,
+  MIN_GRAVITY_DISTANCE,
+} from './scaleConfig.js';
 
 /**
  * Calculates the gravitational acceleration vector exerted on a point mass
@@ -31,7 +30,15 @@ export function calculateGravity(
   }
 
   const distance = Math.sqrt(distanceSquared);
-  const magnitude = (G * bodyMass) / distanceSquared;
+
+  // Clamp only the magnitude calculation to prevent 1/r² spikes during close
+  // passes. The direction vector uses the actual (dx, dy) so the force still
+  // points toward the body even when the ship is inside the clamped radius.
+  const clampedDistanceSquared = Math.max(
+    distanceSquared,
+    MIN_GRAVITY_DISTANCE * MIN_GRAVITY_DISTANCE,
+  );
+  const magnitude = (G * bodyMass) / clampedDistanceSquared;
 
   // Normalize direction then scale by magnitude in one step.
   return {

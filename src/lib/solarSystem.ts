@@ -28,7 +28,7 @@ const KERBOL_COLOR = '#ffdd44';
 // ---------------------------------------------------------------------------
 const KERBIN_MASS = 5.2915793e22;   // kg — KSP canonical value
 const KERBIN_RADIUS = 600;          // gu (km) — KSP canonical value
-const KERBIN_ORBITAL_RADIUS = 13_599_840;  // gu (km) from Kerbol
+const KERBIN_ORBITAL_RADIUS = 20_000_000;  // gu (km) from Kerbol — spread for visual clarity
 const KERBIN_ORBITAL_PERIOD = 9_203_545;   // seconds — KSP canonical ~106 days
 const KERBIN_COLOR = '#4488cc';
 
@@ -55,7 +55,7 @@ const MINMUS_COLOR = '#aaddbb';
 // ---------------------------------------------------------------------------
 const DUNA_MASS = 4.5154812e21;     // kg — KSP canonical value
 const DUNA_RADIUS = 320;            // gu (km)
-const DUNA_ORBITAL_RADIUS = 20_726_155; // gu (km) from Kerbol
+const DUNA_ORBITAL_RADIUS = 40_000_000; // gu (km) from Kerbol — spread for visual clarity
 const DUNA_ORBITAL_PERIOD = 17_315_400; // seconds — KSP canonical ~200 days
 const DUNA_COLOR = '#cc6644';
 
@@ -64,7 +64,7 @@ const DUNA_COLOR = '#cc6644';
 // ---------------------------------------------------------------------------
 const EVE_MASS = 1.2243980e23;      // kg — KSP canonical value
 const EVE_RADIUS = 700;             // gu (km)
-const EVE_ORBITAL_RADIUS = 9_832_685; // gu (km) from Kerbol
+const EVE_ORBITAL_RADIUS = 12_000_000; // gu (km) from Kerbol — spread for visual clarity
 const EVE_ORBITAL_PERIOD = 5_657_995; // seconds — KSP canonical ~65 days
 const EVE_COLOR = '#993399';
 

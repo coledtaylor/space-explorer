@@ -1,13 +1,15 @@
 import { GameObjects, Scene } from 'phaser';
 import type { CelestialBodyConfig, Vec2 } from '../types/index.js';
 import { getOrbitalPosition } from '../lib/orbit.js';
-
-// Wire-outline style constants
-const BODY_LINE_WIDTH = 1.5;
-const BODY_LINE_ALPHA = 1.0;
-
-// Minimum visual radius so small moons are still visible on-screen.
-const MIN_VISUAL_RADIUS = 4; // pixels
+import {
+  STAR_SCALE_FACTOR,
+  BODY_SCALE_FACTOR,
+  MIN_BODY_RADIUS,
+  MIN_SCREEN_RADIUS,
+  BODY_LINE_WIDTH,
+  BODY_LINE_ALPHA,
+  BODY_FILL_ALPHA,
+} from '../lib/scaleConfig.js';
 
 /**
  * Converts a CSS hex color string ("#rrggbb") to a Phaser-compatible
@@ -20,15 +22,21 @@ function parseCssHex(cssColor: string): number {
 }
 
 /**
- * Computes the visual draw radius for a body from its config radius.
- * Bodies span enormous physical sizes (60–261600 km) but must all be
- * distinguishable at canvas scale. We use a log scale clamped to a minimum.
+ * Computes the visual draw radius in world-space pixels from the body's
+ * physical radius. Bodies are visually exaggerated so they're substantial
+ * relative to orbit distances — same approach KSP uses. Without this,
+ * Kerbin (600km) at WORLD_SCALE 1e-3 would be 0.6px.
+ *
+ * Visual scale: sqrt(radius) * multiplier gives a nice spread where the
+ * star is much bigger than planets, and planets are bigger than moons,
+ * without the star being overwhelmingly huge.
  */
-function computeVisualRadius(configRadius: number): number {
-  // log10 scale: radius 60 → ~3.4, radius 600 → ~4.1, radius 261600 → ~7.0
-  // Multiply by a tuning factor so the star is noticeably larger than planets.
-  const logRadius = Math.log10(Math.max(1, configRadius));
-  return Math.max(MIN_VISUAL_RADIUS, logRadius * 3);
+function computeVisualRadius(config: CelestialBodyConfig): number {
+  if (config.kind === 'star') {
+    return Math.sqrt(config.radius) * STAR_SCALE_FACTOR;
+  }
+  const scaled = Math.sqrt(config.radius) * BODY_SCALE_FACTOR;
+  return Math.max(MIN_BODY_RADIUS, scaled);
 }
 
 /**
@@ -57,7 +65,7 @@ export class CelestialBody extends GameObjects.Graphics {
     super(scene);
     this.config = config;
     this.parent = parent;
-    this.visualRadius = computeVisualRadius(config.radius);
+    this.visualRadius = computeVisualRadius(config);
     this.worldScale = worldScale;
 
     // Star anchors to world origin; orbiting bodies start at worldOrigin too
@@ -69,10 +77,25 @@ export class CelestialBody extends GameObjects.Graphics {
     this.drawBody();
   }
 
-  private drawBody(): void {
+  private drawBody(drawRadius: number = this.visualRadius): void {
     const color = parseCssHex(this.config.color);
+    this.fillStyle(color, BODY_FILL_ALPHA);
+    this.fillCircle(0, 0, drawRadius);
     this.lineStyle(BODY_LINE_WIDTH, color, BODY_LINE_ALPHA);
-    this.strokeCircle(0, 0, this.visualRadius);
+    this.strokeCircle(0, 0, drawRadius);
+  }
+
+  /**
+   * Redraws this body ensuring it stays visible when zoomed far out.
+   * The body keeps its world-space size, but gets a minimum screen-space
+   * radius so it doesn't vanish into a sub-pixel dot.
+   */
+  updateVisualScale(cameraZoom: number): void {
+    // Minimum world-space radius to guarantee MIN_SCREEN_RADIUS on screen.
+    const minWorldRadius = MIN_SCREEN_RADIUS / cameraZoom;
+    const worldRadius = Math.max(this.visualRadius, minWorldRadius);
+    this.clear();
+    this.drawBody(worldRadius);
   }
 
   /**

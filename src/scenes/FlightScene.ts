@@ -2,30 +2,29 @@ import { Scene, GameObjects } from 'phaser';
 import { Ship } from '../objects/Ship.js';
 import { CelestialBody } from '../objects/CelestialBody.js';
 import { SOLAR_SYSTEM } from '../lib/solarSystem.js';
-import { createOrbitLine } from '../lib/orbitLines.js';
+import { createOrbitLine, updateOrbitLineZoom } from '../lib/orbitLines.js';
 import { sumGravitationalForces } from '../lib/physics.js';
 import { clampZoom, ZOOM_MIN, ZOOM_MAX } from '../lib/camera.js';
-import type { Vec2 } from '../types/index.js';
+import { WORLD_SCALE, ACCEL_SCALE, INITIAL_ZOOM } from '../lib/scaleConfig.js';
+import type { Vec2, CelestialBodyConfig } from '../types/index.js';
 
 const HUD_FONT_SIZE = '16px';
 const HUD_PADDING = 12;
 const HUD_DEPTH = 10; // renders above all world-space objects
-
-// Scale factor: game units (km) → screen pixels.
-// At 3e-5 px/km, Kerbin sits ~408 px from the star — visible at default zoom.
-const WORLD_SCALE = 3e-5; // px/km
-
-// Converts km/s² (physics output) to px/ms² for applying to ship velocity.
-// Velocity is tracked as px/ms; Phaser delta is in ms.
-const ACCEL_SCALE = WORLD_SCALE / 1_000_000; // (px/km) / (ms²/s²)
-
-const INITIAL_ZOOM = 0.3;       // close enough to see Kerbin's orbit at startup
 const SCROLL_SENSITIVITY = 1.0; // zoom change magnitude per wheel tick
 
 /** Orbit-line graphics paired with the parent body it must track each frame. */
 interface OrbitLine {
   graphics: GameObjects.Graphics;
   parent: CelestialBody;
+  /** Config for this body — needed to redraw the circle each frame at zoom-compensated width. */
+  config: CelestialBodyConfig;
+}
+
+/** All orbit-line graphics, keyed by body config — includes fixed (planet) lines. */
+interface AllOrbitLine {
+  graphics: GameObjects.Graphics;
+  config: CelestialBodyConfig;
 }
 
 export class FlightScene extends Scene {
@@ -37,6 +36,7 @@ export class FlightScene extends Scene {
 
   private celestialBodies: CelestialBody[] = [];
   private movingOrbitLines: OrbitLine[] = [];
+  private allOrbitLines: AllOrbitLine[] = [];
   // Pixel coordinate of the solar system origin; used for km↔px conversion.
   private worldOrigin!: Vec2;
 
@@ -51,6 +51,8 @@ export class FlightScene extends Scene {
     this.createHud();
     this.bindKeys();
     this.configureCamera();
+    // Must be last — UI camera ignores all world objects that exist at this point.
+    this.configureUiCamera();
   }
 
   private createCelestialBodies(): void {
@@ -67,9 +69,10 @@ export class FlightScene extends Scene {
 
       const orbitLine = createOrbitLine(this, config, WORLD_SCALE);
       if (orbitLine !== null) {
+        this.allOrbitLines.push({ graphics: orbitLine, config });
         if (parent !== null) {
           // Moon orbit lines must follow their parent planet each frame.
-          this.movingOrbitLines.push({ graphics: orbitLine, parent });
+          this.movingOrbitLines.push({ graphics: orbitLine, parent, config });
           orbitLine.x = parent.x;
           orbitLine.y = parent.y;
         } else {
@@ -82,9 +85,11 @@ export class FlightScene extends Scene {
   }
 
   private createShip(): void {
-    // Place near Kerbin's orbit so gravity is immediately apparent at startup.
+    // Place above the star at Kerbin's orbital distance — offset 90° from
+    // Kerbin's starting position (which is to the right at t=0) so the ship
+    // doesn't spawn on top of the planet and get flung by its gravity.
     const kerbinOrbitPx = SOLAR_SYSTEM.bodies.kerbin.orbitalRadius * WORLD_SCALE;
-    this.ship = new Ship(this, this.worldOrigin.x + kerbinOrbitPx, this.worldOrigin.y);
+    this.ship = new Ship(this, this.worldOrigin.x, this.worldOrigin.y - kerbinOrbitPx);
   }
 
   private createHud(): void {
@@ -92,8 +97,21 @@ export class FlightScene extends Scene {
       fontSize: HUD_FONT_SIZE,
       color: '#ffffff',
     });
-    // setScrollFactor(0) pins the HUD to the screen, ignoring camera and zoom.
-    this.speedText.setScrollFactor(0).setDepth(HUD_DEPTH);
+    this.speedText.setDepth(HUD_DEPTH);
+  }
+
+  /** Create a UI camera that only renders HUD elements, unaffected by zoom/scroll. */
+  private configureUiCamera(): void {
+    const uiCamera = this.cameras.add(0, 0, this.scale.width, this.scale.height);
+
+    // UI camera renders ONLY the HUD — ignore every other child.
+    const worldObjects = this.children.list.filter((child) => child !== this.speedText);
+    for (const obj of worldObjects) {
+      uiCamera.ignore(obj);
+    }
+
+    // Main camera renders everything EXCEPT the HUD.
+    this.cameras.main.ignore(this.speedText);
   }
 
   private bindKeys(): void {
@@ -125,15 +143,26 @@ export class FlightScene extends Scene {
   }
 
   private updateCelestialBodies(time: number): void {
+    const zoom = this.cameras.main.zoom;
     for (const body of this.celestialBodies) {
       body.updatePosition(time);
+      body.updateVisualScale(zoom);
     }
   }
 
   private updateOrbitLines(): void {
+    const zoom = this.cameras.main.zoom;
+
+    // Reposition moving (moon) orbit lines to track their parent planet.
     for (const { graphics, parent } of this.movingOrbitLines) {
       graphics.x = parent.x;
       graphics.y = parent.y;
+    }
+
+    // Redraw all orbit lines with zoom-compensated line width so they stay
+    // a consistent screen-space thickness across the full zoom range.
+    for (const { graphics, config } of this.allOrbitLines) {
+      updateOrbitLineZoom(graphics, config, WORLD_SCALE, zoom);
     }
   }
 
